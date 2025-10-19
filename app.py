@@ -2,6 +2,7 @@ import streamlit as st
 from nutrition_info import analyze_meal
 from text_extraction import process_input
 from llm_model import ai_nutritionist
+from diet_analyzer import analyze_diet_progress  # Add this import
 
 # --------------------------
 # Streamlit Page Setup
@@ -12,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-st.title("🥗 Your Nutritionist Assistant")
+st.title("🥗 Your AI Nutritionist Assistant")
 st.markdown("Get **nutrition insights** or **AI-powered meal recommendations** based on your ingredients.")
 
 # --------------------------
@@ -113,7 +114,7 @@ if get_nutrition or get_ai_answer:
             if extracted_text.startswith("❌"):
                 st.error(extracted_text)
             else:
-                st.success(f"Extracted foods: {extracted_text}")
+                st.success(f"✅ Extracted foods: {extracted_text}")
 
                 # Convert extracted text to list for display
                 detected_foods = [food.strip() for food in extracted_text.split(",") if food.strip()]
@@ -126,8 +127,34 @@ if get_nutrition or get_ai_answer:
                     with st.spinner("⚡ Analyzing nutrition..."):
                         nutrition_summary = analyze_meal(extracted_text)
 
+                    # Display Nutrition Information
                     st.markdown("#### 🥦 Nutritional Information")
                     st.text_area("Nutrition Details", nutrition_summary, height=200)
+
+                    # NEW: Diet Progress Analysis
+                    with st.spinner("🎯 Analyzing your diet progress..."):
+                        # Convert goal and diet to expected format
+                        goal_mapping = {
+                            "Lose Weight": "lose",
+                            "Maintain Weight": "maintain",
+                            "Gain Weight": "gain"
+                        }
+                        diet_mapping = {
+                            "Vegetarian": "vegetarian",
+                            "Vegan": "vegan",
+                            "Non-Vegetarian": "non-veg"
+                        }
+
+                        diet_analysis = analyze_diet_progress(
+                            nutrition_summary=nutrition_summary,
+                            user_goal=goal_mapping[goal],
+                            current_diet=diet_mapping[diet]
+                        )
+
+                    st.markdown("---")
+                    st.subheader("📈 Diet Progress Analysis")
+                    st.markdown("#### 🎯 How's Your Diet Aligning with Your Goals?")
+                    st.write(diet_analysis)
 
                 # AI Recommendation
                 if get_ai_answer:
@@ -178,6 +205,7 @@ with col1:
     - Quick nutrition facts
     - Macronutrient breakdown
     - Calorie information
+    - **NEW**: Diet progress analysis
     """)
 
 with col2:
@@ -195,4 +223,5 @@ with col3:
     - Be specific with ingredients
     - Include quantities if known
     - Mention cooking methods
+    - Regular analysis for better tracking
     """)
