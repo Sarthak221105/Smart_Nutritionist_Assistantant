@@ -2,10 +2,26 @@ import admin from "firebase-admin";
 import { createRequire } from "module";
 import User from "../models/User.js";
 
-const require = createRequire(import.meta.url);
-const serviceAccount = require("../firebase-key.json");
+let serviceAccount;
 
-if (!admin.apps.length) {
+// In production, parse service account credentials from environment variables.
+// In development, fall back to the local ignored firebase-key.json file.
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } catch (err) {
+    console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT environment variable:", err.message);
+  }
+} else {
+  try {
+    const require = createRequire(import.meta.url);
+    serviceAccount = require("../firebase-key.json");
+  } catch (err) {
+    console.error("Failed to load local firebase-key.json:", err.message);
+  }
+}
+
+if (serviceAccount && !admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
   });
