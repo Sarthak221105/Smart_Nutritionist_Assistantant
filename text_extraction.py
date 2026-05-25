@@ -80,7 +80,7 @@ def process_input(input_data=None, uploaded_file=None):
     """
     try:
         if uploaded_file is not None:
-            print("🖼️ Extracting food items from uploaded image...")
+            print("Extracting food items from uploaded image...")
             # Use tempfile for safe temporary file handling
             with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_file:
                 temp_file.write(uploaded_file.getvalue())
@@ -97,7 +97,7 @@ def process_input(input_data=None, uploaded_file=None):
                     pass  # Ignore deletion errors
 
         elif input_data and isinstance(input_data, str):
-            print("📝 Extracting food items from text...")
+            print("Extracting food items from text...")
             extracted_text = extract_foods_from_text(input_data)
             return extracted_text
         else:

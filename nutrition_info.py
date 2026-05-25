@@ -170,7 +170,7 @@ def analyze_meal(meal_text):
         return "Please provide a valid meal description."
 
     foods = extract_foods_from_text(meal_text)
-    print(f"\n🍽️ Foods detected: {foods}\n")
+    print(f"\nFoods detected: {foods}\n")
 
     if not foods:
         return "No valid foods detected in the input."

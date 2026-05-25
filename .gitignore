@@ -1,6 +1,18 @@
 .env
-js_backend
 dataset
 chroma_nutrition
 chroma_recipe_db
+.idea/
+.kilo/
+__pycache__/
+test_red.jpg
 
+# Backend ignoring rules
+js_backend/node_modules/
+js_backend/.env
+js_backend/firebase-key.json
+
+# Frontend ignoring rules
+frotend/node_modules/
+frotend/dist/
+frotend/.env
