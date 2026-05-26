@@ -2,7 +2,11 @@ import chromadb
 from sentence_transformers import SentenceTransformer
 
 # Initialize Chroma
-chroma_client = chromadb.PersistentClient(path="./chroma_recipe_db")
+try:
+    chroma_client = chromadb.PersistentClient(path="./chroma_recipe_db")
+except Exception:
+    print("PersistentClient failed, using EphemeralClient (no local recipe data)")
+    chroma_client = chromadb.EphemeralClient()
 
 collection = None
 try:

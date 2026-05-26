@@ -2,20 +2,18 @@ import os
 import re
 import json
 from flask import Flask, request, jsonify
+from flask_cors import CORS
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from text_extraction import process_input
 from nutrition_info import analyze_meal
 from llm_model import ai_nutritionist
 from diet_analyzer import analyze_diet_progress
 
 app = Flask(__name__)
-
-# Enable CORS manually to avoid external dependencies
-@app.after_request
-def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-    return response
+CORS(app)  # Enable CORS for all routes
 
 class StreamlitUploadedFileWrapper:
     """Wraps Flask file upload object to support Streamlit file interface (.getvalue())"""
@@ -23,6 +21,10 @@ class StreamlitUploadedFileWrapper:
         self.data = file_storage.read()
     def getvalue(self):
         return self.data
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "ok", "service": "ai-nutritionist-python"}), 200
 
 @app.route('/analyze', methods=['POST', 'OPTIONS'])
 def analyze():

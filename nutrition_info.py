@@ -13,7 +13,11 @@ load_dotenv()
 USDA_API_KEY = os.getenv("USDA_API_KEY")
 
 
-client = chromadb.PersistentClient(path="./chroma_nutrition")
+try:
+    client = chromadb.PersistentClient(path="./chroma_nutrition")
+except Exception:
+    print("PersistentClient failed, using EphemeralClient (no local data)")
+    client = chromadb.EphemeralClient()
 collection = client.get_or_create_collection("nutrition_usda")
 
 BASE_URL = "https://api.nal.usda.gov/fdc/v1/foods/search"

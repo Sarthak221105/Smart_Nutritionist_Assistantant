@@ -3,6 +3,10 @@ import { useAuth } from './AuthContext';
 
 const NutritionContext = createContext(null);
 
+// Backend URLs — use env vars in production, fallback to localhost for dev
+const NODE_BACKEND = import.meta.env.VITE_NODE_BACKEND_URL || 'http://localhost:5000';
+const PYTHON_BACKEND = import.meta.env.VITE_PYTHON_BACKEND_URL || 'http://localhost:5001';
+
 const DEFAULT_PROFILE = {
   name: 'Guest User',
   age: 28,
@@ -40,7 +44,7 @@ export const NutritionProvider = ({ children }) => {
         if (!token) return;
 
         // Fetch User Profile
-        const profileRes = await fetch('http://localhost:5000/api/auth/profile', {
+        const profileRes = await fetch(`${NODE_BACKEND}/api/auth/profile`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (profileRes.ok) {
@@ -49,7 +53,7 @@ export const NutritionProvider = ({ children }) => {
         }
 
         // Fetch User Diet Logs
-        const logsRes = await fetch('http://localhost:5000/api/diet', {
+        const logsRes = await fetch(`${NODE_BACKEND}/api/diet`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (logsRes.ok) {
@@ -90,7 +94,7 @@ export const NutritionProvider = ({ children }) => {
         return;
       }
 
-      const res = await fetch('http://localhost:5000/api/diet', {
+      const res = await fetch(`${NODE_BACKEND}/api/diet`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -119,7 +123,7 @@ export const NutritionProvider = ({ children }) => {
       const token = await getIdToken();
       if (!token) return;
 
-      const res = await fetch(`http://localhost:5000/api/diet/${id}`, {
+      const res = await fetch(`${NODE_BACKEND}/api/diet/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -174,7 +178,7 @@ export const NutritionProvider = ({ children }) => {
       const token = await getIdToken();
       if (!token) return;
 
-      const res = await fetch('http://localhost:5000/api/auth/profile', {
+      const res = await fetch(`${NODE_BACKEND}/api/auth/profile`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -211,7 +215,7 @@ export const NutritionProvider = ({ children }) => {
         formData.append('cuisinePreference', userPreferences.cuisinePreference || 'Any');
         formData.append('mealType', userPreferences.mealType || 'Lunch');
 
-        const res = await fetch('http://localhost:5001/analyze', {
+        const res = await fetch(`${PYTHON_BACKEND}/analyze`, {
           method: 'POST',
           body: formData,
         });
