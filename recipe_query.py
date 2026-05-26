@@ -1,7 +1,7 @@
 import chromadb
 from sentence_transformers import SentenceTransformer
 
-# Initialize Chroma and model
+# Initialize Chroma
 chroma_client = chromadb.PersistentClient(path="./chroma_recipe_db")
 
 collection = None
@@ -9,18 +9,28 @@ try:
     collection = chroma_client.get_collection("recipes")
 except Exception as e:
     print(f"Collection 'recipes' not found. Creating placeholder. Error: {e}")
-    # Use get_or_create to prevent crashing in production environments
     collection = chroma_client.get_or_create_collection("recipes")
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+# Lazy load SentenceTransformer model to prevent server startup timeouts
+model = None
+
+def get_model():
+    global model
+    if model is None:
+        print("Loading SentenceTransformer model (all-MiniLM-L6-v2)...")
+        model = SentenceTransformer("all-MiniLM-L6-v2")
+    return model
 
 
 def search_recipe(query, top_k=5):
     if not collection:
         return "No recipes database found."
 
+    # Lazy load the transformer model
+    transformer_model = get_model()
+    
     # Create embedding for query
-    embedding = model.encode(query)
+    embedding = transformer_model.encode(query)
 
     # Query ChromaDB
     try:
