@@ -7,10 +7,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from text_extraction import process_input
-from nutrition_info import analyze_meal
-from llm_model import ai_nutritionist
-from diet_analyzer import analyze_diet_progress
+# IMPORTANT: No heavy imports at module level!
+# text_extraction, nutrition_info, llm_model, diet_analyzer are loaded lazily
+# inside the /analyze endpoint. This ensures Flask can bind to a port immediately
+# on Render without waiting for PyTorch/SentenceTransformers/ChromaDB to load.
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -32,6 +32,12 @@ def analyze():
         return '', 200
 
     try:
+        # Lazy import heavy modules only when endpoint is called
+        from text_extraction import process_input
+        from nutrition_info import analyze_meal
+        from llm_model import ai_nutritionist
+        from diet_analyzer import analyze_diet_progress
+
         # 1. Extract inputs
         text = request.form.get('text')
         photo_file = request.files.get('photo')

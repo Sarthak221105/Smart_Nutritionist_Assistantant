@@ -2,8 +2,6 @@ import os
 import re
 import requests
 from dotenv import load_dotenv
-import chromadb
-from chromadb.config import Settings
 
 # ----------------------------------------------------
 # 🔧 Setup
@@ -11,16 +9,29 @@ from chromadb.config import Settings
 load_dotenv()
 
 USDA_API_KEY = os.getenv("USDA_API_KEY")
-
-
-try:
-    client = chromadb.PersistentClient(path="./chroma_nutrition")
-except Exception:
-    print("PersistentClient failed, using EphemeralClient (no local data)")
-    client = chromadb.EphemeralClient()
-collection = client.get_or_create_collection("nutrition_usda")
-
 BASE_URL = "https://api.nal.usda.gov/fdc/v1/foods/search"
+
+# Lazy ChromaDB initialization — don't load at import time
+_client = None
+_collection = None
+
+
+def _get_collection():
+    """Lazily initialize ChromaDB client and collection."""
+    global _client, _collection
+    if _collection is not None:
+        return _collection
+
+    import chromadb
+
+    try:
+        _client = chromadb.PersistentClient(path="./chroma_nutrition")
+    except Exception:
+        print("PersistentClient failed, using EphemeralClient (no local data)")
+        _client = chromadb.EphemeralClient()
+
+    _collection = _client.get_or_create_collection("nutrition_usda")
+    return _collection
 
 
 # Fetch from USDA API
@@ -95,6 +106,7 @@ def fetch_food_data(food_name):
 # Check if food exists in Chroma
 def food_exists_in_chroma(food_name):
     try:
+        collection = _get_collection()
         results = collection.get(
             where={"name": food_name.lower()},
             limit=1
@@ -114,6 +126,7 @@ def add_to_chromadb(item):
         if food_exists_in_chroma(item["name"]):
             return True
 
+        collection = _get_collection()
         collection.add(
             ids=[item["id"]],
             documents=[item["document"]],
@@ -156,6 +169,7 @@ def extract_foods_from_text(text):
 # Query Chroma for food
 def query_chroma_for_food(food_name):
     try:
+        collection = _get_collection()
         results = collection.get(
             where={"name": food_name.lower()},
             limit=1
@@ -211,4 +225,3 @@ def analyze_meal(meal_text):
         return "No nutrition information could be retrieved for any of the provided foods."
 
     return "\n".join(results_summary)
-

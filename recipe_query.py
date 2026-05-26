@@ -1,44 +1,59 @@
-import chromadb
-from sentence_transformers import SentenceTransformer
 
-# Initialize Chroma
-try:
-    chroma_client = chromadb.PersistentClient(path="./chroma_recipe_db")
-except Exception:
-    print("PersistentClient failed, using EphemeralClient (no local recipe data)")
-    chroma_client = chromadb.EphemeralClient()
+# Lazy-loading module: nothing heavy is imported at module level
+# This ensures the Flask server can start and bind to a port immediately
 
+chroma_client = None
 collection = None
-try:
-    collection = chroma_client.get_collection("recipes")
-except Exception as e:
-    print(f"Collection 'recipes' not found. Creating placeholder. Error: {e}")
-    collection = chroma_client.get_or_create_collection("recipes")
-
-# Lazy load SentenceTransformer model to prevent server startup timeouts
 model = None
 
-def get_model():
+
+def _get_chroma_collection():
+    """Lazily initialize ChromaDB client and collection."""
+    global chroma_client, collection
+    if collection is not None:
+        return collection
+
+    import chromadb
+
+    try:
+        chroma_client = chromadb.PersistentClient(path="./chroma_recipe_db")
+    except Exception:
+        print("PersistentClient failed, using EphemeralClient (no local recipe data)")
+        chroma_client = chromadb.EphemeralClient()
+
+    try:
+        collection = chroma_client.get_collection("recipes")
+    except Exception as e:
+        print(f"Collection 'recipes' not found. Creating placeholder. Error: {e}")
+        collection = chroma_client.get_or_create_collection("recipes")
+
+    return collection
+
+
+def _get_model():
+    """Lazily load SentenceTransformer model."""
     global model
     if model is None:
         print("Loading SentenceTransformer model (all-MiniLM-L6-v2)...")
+        from sentence_transformers import SentenceTransformer
         model = SentenceTransformer("all-MiniLM-L6-v2")
     return model
 
 
 def search_recipe(query, top_k=5):
-    if not collection:
+    coll = _get_chroma_collection()
+    if not coll:
         return "No recipes database found."
 
     # Lazy load the transformer model
-    transformer_model = get_model()
-    
+    transformer_model = _get_model()
+
     # Create embedding for query
     embedding = transformer_model.encode(query)
 
     # Query ChromaDB
     try:
-        results = collection.query(
+        results = coll.query(
             query_embeddings=[embedding.tolist()],
             n_results=top_k
         )

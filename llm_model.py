@@ -1,11 +1,10 @@
 import os
-import google.generativeai as genai
-from nutrition_info import analyze_meal
-from recipe_query import search_recipe
-from text_extraction import process_input
+from dotenv import load_dotenv
 
-# Configure Gemini
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+load_dotenv()
+
+# All heavy imports are done lazily inside functions, not at module level.
+# This ensures the Flask server can bind to a port immediately on Render.
 
 
 def ai_nutritionist(user_input, goal, food_type, dietary_restrictions=None, allergies=None, cuisine_preference=None):
@@ -18,6 +17,16 @@ def ai_nutritionist(user_input, goal, food_type, dietary_restrictions=None, alle
     allergies: list of allergies e.g., ["nuts", "dairy"]
     cuisine_preference: preferred cuisine style e.g., "mediterranean", "asian"
     """
+    # Lazy imports — only loaded when this function is called
+    import google.generativeai as genai
+    from nutrition_info import analyze_meal
+    from recipe_query import search_recipe
+    from text_extraction import process_input
+
+    # Configure Gemini
+    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    genai.configure(api_key=api_key)
+
     print("Processing user input...")
 
     # Step 1: Extract ingredients from ORIGINAL user input
