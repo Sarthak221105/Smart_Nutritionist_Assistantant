@@ -17,21 +17,8 @@ _collection = None
 
 
 def _get_collection():
-    """Lazily initialize ChromaDB client and collection."""
-    global _client, _collection
-    if _collection is not None:
-        return _collection
-
-    import chromadb
-
-    try:
-        _client = chromadb.PersistentClient(path="./chroma_nutrition")
-    except Exception:
-        print("PersistentClient failed, using EphemeralClient (no local data)")
-        _client = chromadb.EphemeralClient()
-
-    _collection = _client.get_or_create_collection("nutrition_usda")
-    return _collection
+    """Bypassed for Render deployment compatibility to avoid heavy memory usage."""
+    return None
 
 
 # Fetch from USDA API
@@ -107,6 +94,8 @@ def fetch_food_data(food_name):
 def food_exists_in_chroma(food_name):
     try:
         collection = _get_collection()
+        if not collection:
+            return False
         results = collection.get(
             where={"name": food_name.lower()},
             limit=1
@@ -123,10 +112,12 @@ def add_to_chromadb(item):
         return False
 
     try:
+        collection = _get_collection()
+        if not collection:
+            return False
         if food_exists_in_chroma(item["name"]):
             return True
 
-        collection = _get_collection()
         collection.add(
             ids=[item["id"]],
             documents=[item["document"]],
