@@ -26,6 +26,16 @@ class StreamlitUploadedFileWrapper:
 def health():
     return jsonify({"status": "ok", "service": "ai-nutritionist-python"}), 200
 
+@app.route('/debug-key', methods=['GET'])
+def debug_key():
+    key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or ""
+    if len(key) > 10:
+        masked = f"{key[:6]}...{key[-4:]}"
+    else:
+        masked = "No key or key too short"
+    return jsonify({"masked_key": masked, "length": len(key)})
+
+
 @app.route('/analyze', methods=['POST', 'OPTIONS'])
 def analyze():
     if request.method == 'OPTIONS':
