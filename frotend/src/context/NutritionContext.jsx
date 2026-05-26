@@ -225,7 +225,10 @@ export const NutritionProvider = ({ children }) => {
           showToast('Analysis completed successfully via backend AI!');
           return data;
         } else {
-          console.warn('Backend API returned error, falling back to mock simulation.');
+          const errData = await res.json().catch(() => ({}));
+          const errMsg = errData.message || 'Backend API returned error';
+          console.warn(`${errMsg}, falling back to mock simulation.`);
+          showToast(`API Warning: ${errMsg.replace('❌', '')}`, 'info');
         }
       }
     } catch (e) {
