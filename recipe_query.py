@@ -4,27 +4,35 @@ from sentence_transformers import SentenceTransformer
 # Initialize Chroma and model
 chroma_client = chromadb.PersistentClient(path="./chroma_recipe_db")
 
+collection = None
 try:
     collection = chroma_client.get_collection("recipes")
-except:
-    print("Collection 'recipes' not found.")
-    exit()
+except Exception as e:
+    print(f"Collection 'recipes' not found. Creating placeholder. Error: {e}")
+    # Use get_or_create to prevent crashing in production environments
+    collection = chroma_client.get_or_create_collection("recipes")
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
 
 def search_recipe(query, top_k=5):
+    if not collection:
+        return "No recipes database found."
 
     # Create embedding for query
     embedding = model.encode(query)
 
     # Query ChromaDB
-    results = collection.query(
-        query_embeddings=[embedding.tolist()],
-        n_results=top_k
-    )
+    try:
+        results = collection.query(
+            query_embeddings=[embedding.tolist()],
+            n_results=top_k
+        )
+    except Exception as e:
+        print(f"Error querying ChromaDB: {e}")
+        return "No recipes found."
 
-    if not results["documents"] or not results["documents"][0]:
+    if not results.get("documents") or not results["documents"][0]:
         print("No similar recipes found.")
         return "No recipes found."
 
