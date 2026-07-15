@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Plus, Trash2, Calendar, Target, Flame, Egg, ChefHat, Dumbbell, Droplets } from 'lucide-react';
 import { useNutrition } from '../context/NutritionContext';
 import { ConfirmDialog } from './ui/Modal';
+import DeficiencyAlerts from './DeficiencyAlerts';
 
 const Dashboard = ({ setActiveTab }) => {
   const { logs, profile, deleteLog, addLog } = useNutrition();
@@ -92,6 +93,8 @@ const Dashboard = ({ setActiveTab }) => {
           </div>
         </div>
       </div>
+
+      <DeficiencyAlerts />
 
       {/* Progress Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
