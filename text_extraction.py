@@ -5,9 +5,96 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Shared instruction used by every vision provider so the extraction task
+# stays identical regardless of which model actually runs it.
+_FOOD_PROMPT = (
+    "Extract all visible food items from this image. "
+    "Return only a simple comma-separated list of food names. "
+    "Example: 'banana, apple, bread, chicken' "
+    "Do not include quantities, descriptions, or other text."
+)
+
+NVIDIA_INVOKE_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+NVIDIA_VISION_MODEL = "meta/llama-3.2-90b-vision-instruct"
+
+
+def _downscale_image_b64(image_path, max_b64_len=170000):
+    """Return base64 JPEG of the image, downscaled to fit NVIDIA's inline image
+    limit (~180KB base64). Uploaded meal photos are often several MB / thousands
+    of pixels, which the inline endpoint rejects, so shrink until it fits."""
+    import io
+    import base64
+    from PIL import Image
+
+    img = Image.open(image_path).convert("RGB")
+    max_dim, quality = 1024, 85
+    while True:
+        resized = img.copy()
+        resized.thumbnail((max_dim, max_dim))
+        buf = io.BytesIO()
+        resized.save(buf, format="JPEG", quality=quality)
+        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        if len(b64) <= max_b64_len:
+            return b64
+        if quality > 55:
+            quality -= 10
+        else:
+            max_dim = int(max_dim * 0.85)
+
+
+def extract_foods_with_nvidia(image_path):
+    """Extract food items from an image using NVIDIA-hosted Llama-3.2-90B-Vision.
+
+    Primary vision provider (chosen over Gemini after benchmarking: accurate,
+    no hallucinations, and not subject to Gemini's 20/day free-tier quota).
+    Raises on any technical failure (missing key, non-200, timeout) so
+    process_input() can fall back to Gemini; returns a cleaned comma-separated
+    food list, or a friendly no-food message, on success.
+    """
+    import requests
+
+    api_key = os.getenv("NVIDIA_API_KEY")
+    if not api_key:
+        raise RuntimeError("NVIDIA_API_KEY not set")
+
+    img_b64 = _downscale_image_b64(image_path)
+
+    headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
+    payload = {
+        "model": NVIDIA_VISION_MODEL,
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": _FOOD_PROMPT},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
+        ]}],
+        "max_tokens": 512,
+        "temperature": 0.2,
+        "top_p": 1.0,
+        "stream": False,
+    }
+
+    response = requests.post(NVIDIA_INVOKE_URL, headers=headers, json=payload, timeout=60)
+    if response.status_code != 200:
+        raise RuntimeError(f"NVIDIA API returned {response.status_code}: {response.text[:120]}")
+
+    content = response.json()["choices"][0]["message"]["content"].strip()
+
+    # Clean the model output into a bare comma list for the downstream parser:
+    # drop markdown, strip any "Here is the list:" style preamble, collapse
+    # newlines, and trim a trailing period.
+    content = re.sub(r'[*`#]', '', content).strip()
+    if ":" in content:
+        after = content.split(":")[-1].strip()
+        if "," in after:
+            content = after
+    content = content.replace("\n", " ").strip().strip(".").strip()
+
+    if not content:
+        return "❌ No food items detected in this image. Try a clearer photo of your meal."
+    return content
+
 
 def extract_foods_with_gemini(image_path):
-    """Extract food items from image using Gemini"""
+    """Extract food items from image using Gemini (fallback vision provider)."""
     try:
         import google.generativeai as genai
         from PIL import Image
@@ -20,14 +107,8 @@ def extract_foods_with_gemini(image_path):
         model = genai.GenerativeModel("gemini-2.5-flash")
 
         image = Image.open(image_path)
-        prompt = (
-            "Extract all visible food items from this image. "
-            "Return only a simple comma-separated list of food names. "
-            "Example: 'banana, apple, bread, chicken' "
-            "Do not include quantities, descriptions, or other text."
-        )
 
-        response = model.generate_content([prompt, image])
+        response = model.generate_content([_FOOD_PROMPT, image])
 
         # Gemini can return a response with no usable Part (e.g. non-food images,
         # or content it declines to describe) — response.text then raises a raw
@@ -93,8 +174,14 @@ def process_input(input_data=None, uploaded_file=None):
                 temp_path = temp_file.name
 
             try:
-                extracted_text = extract_foods_with_gemini(temp_path)
-                return extracted_text
+                # Primary: NVIDIA Llama-3.2-90B-Vision. Fall back to Gemini on
+                # any technical failure (missing key, timeout, non-200) so a
+                # single-provider outage or quota wall doesn't break extraction.
+                try:
+                    return extract_foods_with_nvidia(temp_path)
+                except Exception as e:
+                    print(f"NVIDIA vision extraction failed ({e}); falling back to Gemini.")
+                    return extract_foods_with_gemini(temp_path)
             finally:
                 # Ensure temp file is deleted even if extraction fails
                 try:
