@@ -1,6 +1,5 @@
 import os
 import json
-import threading
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -11,36 +10,16 @@ load_dotenv()
 # text_extraction, nutrition_info, llm_model, diet_analyzer are loaded lazily
 # inside the /analyze endpoint. This ensures Flask can bind to a port immediately
 # on Render without waiting for PyTorch/SentenceTransformers/ChromaDB to load.
+#
+# recipe_query.search_recipe()'s embedding model is loaded lazily too, on
+# whichever request first needs it (~30-100s cold) rather than eagerly at
+# boot — deliberately kept this way on a 512MB Render free-tier instance,
+# where eagerly loading ~400MB+ of torch/sentence-transformers on every boot
+# risks OOM/502s regardless of whether any request ever needs recipe search.
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-
-def _warm_recipe_model():
-    """
-    Loads the sentence-transformers model in the background right after boot,
-    instead of letting it load synchronously inside whichever user's request
-    happens to trigger the first recipe search (recipe_query.search_recipe,
-    called from llm_model.ai_nutritionist) — confirmed to take 30-100+s cold,
-    which was showing up as multi-minute /analyze latency.
-
-    Note: this does NOT reduce peak memory usage, only WHEN it's paid — the
-    model (~400MB+ with its torch/tensorflow dependencies) still has to load
-    into memory at some point before recipe search can run. On a
-    memory-constrained host (this app's comments elsewhere reference Render's
-    512MB free tier), that peak may simply not fit regardless of eager vs
-    lazy loading. If this service OOMs on such a host, disabling eager
-    warm-up here won't fix it — the underlying memory ceiling is the
-    constraint, not the timing of when it's hit.
-    """
-    try:
-        from recipe_query import _get_model
-        _get_model()
-    except Exception as e:
-        print(f"Recipe model warm-up failed (will retry lazily on first request): {e}")
-
-
-threading.Thread(target=_warm_recipe_model, daemon=True).start()
 
 class StreamlitUploadedFileWrapper:
     """Wraps Flask file upload object to support Streamlit file interface (.getvalue())"""
