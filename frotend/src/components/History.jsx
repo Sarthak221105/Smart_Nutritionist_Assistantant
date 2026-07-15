@@ -131,7 +131,7 @@ const History = () => {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-850 text-sm">
                 {filteredLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-55 dark:hover:bg-slate-800/10 transition-colors">
+                  <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/10 transition-colors">
                     <td className="px-6 py-4 text-xs font-medium text-slate-450 whitespace-nowrap">
                       {formatDate(log.date)}
                     </td>

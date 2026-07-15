@@ -30,6 +30,13 @@ export const NutritionProvider = ({ children }) => {
   const [logs, setLogs] = useState([]);
   const [toasts, setToasts] = useState([]);
 
+  // Lives here (not in MealScanner's local state) so an in-progress analysis
+  // survives the user navigating to a different tab. MealScanner unmounts on
+  // tab switch (App.jsx only renders the active tab's component), which would
+  // otherwise destroy local state and silently drop the result when the
+  // request resolved after the component was already gone.
+  const [scanState, setScanState] = useState({ isLoading: false, result: null, error: null });
+
   // Load profile and logs from MongoDB on user sign-in
   useEffect(() => {
     const fetchUserData = async () => {
@@ -43,19 +50,22 @@ export const NutritionProvider = ({ children }) => {
         const token = await getIdToken();
         if (!token) return;
 
-        // Fetch User Profile
-        const profileRes = await fetch(`${NODE_BACKEND}/api/auth/profile`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const authHeaders = { headers: { 'Authorization': `Bearer ${token}` } };
+
+        // Profile and diet logs are independent of each other — fetch them
+        // concurrently instead of one-after-another (each also pays its own
+        // Firebase token verification round-trip server-side, so running them
+        // sequentially was paying that cost twice in a row).
+        const [profileRes, logsRes] = await Promise.all([
+          fetch(`${NODE_BACKEND}/api/auth/profile`, authHeaders),
+          fetch(`${NODE_BACKEND}/api/diet`, authHeaders),
+        ]);
+
         if (profileRes.ok) {
           const profileData = await profileRes.json();
           setProfile(profileData);
         }
 
-        // Fetch User Diet Logs
-        const logsRes = await fetch(`${NODE_BACKEND}/api/diet`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
         if (logsRes.ok) {
           const logsData = await logsRes.json();
           // Map Mongo _id to id property for frontend UI lists
@@ -273,6 +283,29 @@ export const NutritionProvider = ({ children }) => {
     let totalFats = 0;
     let detected = [];
 
+    // Rough per-ingredient micronutrient estimate for the offline demo fallback only —
+    // the real backend path returns actual USDA-derived values in result.nutrients.
+    const microDatabase = {
+      egg: { fiber: 0, iron: 0.9, calcium: 25, vitaminD: 1, vitaminC: 0, potassium: 69 },
+      eggs: { fiber: 0, iron: 1.8, calcium: 50, vitaminD: 2, vitaminC: 0, potassium: 138 },
+      banana: { fiber: 2.6, iron: 0.3, calcium: 5, vitaminD: 0, vitaminC: 8.7, potassium: 358 },
+      milk: { fiber: 0, iron: 0.1, calcium: 300, vitaminD: 2.5, vitaminC: 0, potassium: 322 },
+      rice: { fiber: 0.6, iron: 1.9, calcium: 10, vitaminD: 0, vitaminC: 0, potassium: 55 },
+      chicken: { fiber: 0, iron: 1.0, calcium: 15, vitaminD: 0.1, vitaminC: 0, potassium: 256 },
+      breast: { fiber: 0, iron: 1.0, calcium: 15, vitaminD: 0.1, vitaminC: 0, potassium: 256 },
+      salmon: { fiber: 0, iron: 0.5, calcium: 12, vitaminD: 11, vitaminC: 0, potassium: 384 },
+      spinach: { fiber: 2.2, iron: 2.7, calcium: 99, vitaminD: 0, vitaminC: 28, potassium: 558 },
+      oats: { fiber: 4, iron: 2, calcium: 21, vitaminD: 0, vitaminC: 0, potassium: 164 },
+      honey: { fiber: 0, iron: 0.1, calcium: 1, vitaminD: 0, vitaminC: 0.5, potassium: 11 },
+      almonds: { fiber: 3.5, iron: 1.1, calcium: 76, vitaminD: 0, vitaminC: 0, potassium: 208 },
+      avocado: { fiber: 6.7, iron: 0.6, calcium: 12, vitaminD: 0, vitaminC: 10, potassium: 485 },
+      bread: { fiber: 1.2, iron: 1, calcium: 40, vitaminD: 0, vitaminC: 0, potassium: 60 },
+      apple: { fiber: 4.4, iron: 0.2, calcium: 6, vitaminD: 0, vitaminC: 8, potassium: 195 },
+      broccoli: { fiber: 2.6, iron: 0.7, calcium: 47, vitaminD: 0, vitaminC: 89, potassium: 316 },
+      quinoa: { fiber: 2.8, iron: 1.5, calcium: 17, vitaminD: 0, vitaminC: 0, potassium: 172 },
+    };
+    const totalMicros = { fiber: 0, iron: 0, calcium: 0, vitaminD: 0, vitaminC: 0, potassium: 0 };
+
     // Analyze query to match database items
     parsedIngredients.forEach(ing => {
       let matched = false;
@@ -285,6 +318,11 @@ export const NutritionProvider = ({ children }) => {
           totalFats += item.fats;
           detected.push(ing);
           matched = true;
+
+          const micros = microDatabase[dbKey];
+          if (micros) {
+            Object.keys(totalMicros).forEach((key) => { totalMicros[key] += micros[key] || 0; });
+          }
         }
       });
       if (!matched) {
@@ -299,6 +337,14 @@ export const NutritionProvider = ({ children }) => {
         totalCarbs += randCarb;
         totalFats += randFat;
         detected.push(ing);
+
+        // Rough micronutrient estimate for unrecognized items too
+        totalMicros.fiber += Math.random() * 2;
+        totalMicros.iron += Math.random() * 1.5;
+        totalMicros.calcium += Math.random() * 40;
+        totalMicros.vitaminD += Math.random() * 0.5;
+        totalMicros.vitaminC += Math.random() * 10;
+        totalMicros.potassium += Math.random() * 150;
       }
     });
 
@@ -309,7 +355,10 @@ export const NutritionProvider = ({ children }) => {
       totalCarbs = 48;
       totalFats = 16;
       detected = ['mixed grain bowl', 'healthy protein source', 'green vegetables'];
+      Object.assign(totalMicros, { fiber: 6, iron: 2.5, calcium: 120, vitaminD: 1, vitaminC: 15, potassium: 450 });
     }
+
+    Object.keys(totalMicros).forEach((key) => { totalMicros[key] = Math.round(totalMicros[key] * 10) / 10; });
 
     // Format macro precision
     totalCalories = Math.round(totalCalories);
@@ -329,55 +378,13 @@ export const NutritionProvider = ({ children }) => {
     }
     score = Math.min(Math.max(score, 1), 10); // Clamp between 1 and 10
 
-    // Formulate a professional Gemini-style Markdown report
     const titleCase = (str) => str.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-    const detectedListStr = detected.map(d => `- **${titleCase(d)}**: Extracted and matched with nutritional databases.`).join('\n');
-    
-    const strengthText = score >= 7 
-      ? `High nutrient density with an excellent macronutrient balance matching your goal to **${userGoal} weight**.`
-      : `High caloric density relative to protein levels. Ideal for caloric surpluses but needs portion adjustments for weight loss goals.`;
-    
-    const warningText = userPreferences.dietType === 'vegan' && score === 2
-      ? `🚨 **Allergy/Diet Conflict**: Contains non-vegan ingredients (animal products identified).`
-      : userPreferences.allergies?.length > 0 
-        ? `⚠️ **Allergy Precaution**: Double check if ingredients are processed in nut-free facilities.`
-        : `None detected. This meal is fully aligned with your profile.`;
 
     const alignmentExplanation = score >= 8
       ? `This meal is highly supportive of your active health targets. It contains premium quality macronutrients that fuel muscle recovery and keep insulin spikes stable.`
       : score >= 5
         ? `This meal is moderately supportive but could be optimized. Consider replacing fast-digesting carbohydrates with slow-burning complex carbs.`
         : `This meal is sub-optimal for your targets. The calorie-to-protein ratio is high, which makes it easy to overshoot your calorie budget.`;
-
-    const generatedNutritionReport = `
-# NUTRITION & INGREDIENT ASSESSMENT
-
-## 🥗 EXTRACTED INGREDIENTS
-${detectedListStr}
-
-## 📊 NUTRITIONAL BREAKDOWN
-* **Total Energy**: ${totalCalories} kcal
-* **Protein**: ${totalProtein} g
-* **Carbohydrates**: ${totalCarbs} g
-* **Fat**: ${totalFats} g
-
----
-
-# DIET PROGRESS ANALYSIS
-
-## 🎯 PROGRESS ASSESSMENT
-* **Alignment Score**: ${score}/10
-* **Goal Matching**: This meal is **${score >= 7 ? 'HELPING' : 'HINDERING'}** your goal to ${userGoal === 'lose' ? 'lose weight' : userGoal === 'gain' ? 'gain muscle mass' : 'maintain balance'}.
-* **Strengths**: ${strengthText}
-* **Weaknesses**: ${score < 7 ? 'Slightly high in saturated fat and refined carbohydrates.' : 'Low in simple sugars, rich in micronutrient density.'}
-
-## 📈 NEXT STEPS
-* **Immediate Adjustment**: ${userGoal === 'lose' ? 'Reduce portion size by 15% or add a leafy green side salad to increase fiber.' : 'Add a serving of complex carbs (sweet potato or quinoa) to push caloric intake.'}
-* **Long-term Strategy**: Keep maintaining high protein ratios at meals to support lean skeletal mass preservation.
-
-## 🚨 CONCERNS / WARNINGS
-${warningText}
-`;
 
     const generatedAiConsultation = `
 # EXPERT AI NUTRITIONIST CONSULTATION
@@ -410,15 +417,44 @@ To elevate this meal, pick up some:
     return {
       mealType: userPreferences.mealType || 'Lunch',
       foodItems: detected,
-      calories: totalCalories,
-      protein: totalProtein,
-      carbs: totalCarbs,
-      fats: totalFats,
-      nutritionReport: generatedNutritionReport.trim(),
+      nutrients: {
+        calories: totalCalories,
+        protein: totalProtein,
+        carbs: totalCarbs,
+        fats: totalFats,
+        ...totalMicros,
+      },
+      goalAlignment: {
+        score,
+        verdict: score >= 7 ? 'helping' : score >= 4 ? 'neutral' : 'hindering',
+        summary: alignmentExplanation,
+      },
+      suggestion: userGoal === 'lose'
+        ? 'Reduce portion size by 15% or add a leafy green side salad to increase fiber.'
+        : userGoal === 'gain'
+          ? 'Add a serving of complex carbs (sweet potato or quinoa) to push caloric intake.'
+          : 'Keep your portions balanced and consistent at this level.',
       aiConsultation: generatedAiConsultation.trim(),
-      alignmentScore: score,
-      explanation: alignmentExplanation,
     };
+  };
+
+  // Orchestrates a scan: lives at the provider level (not in MealScanner) so
+  // the request and its result outlive tab navigation. Call this instead of
+  // analyzeMealAPI directly from the scanner UI.
+  const runMealAnalysis = async (file, textInput, userPreferences) => {
+    setScanState({ isLoading: true, result: null, error: null });
+    try {
+      const data = await analyzeMealAPI(file, textInput, userPreferences);
+      setScanState({ isLoading: false, result: data, error: null });
+      return data;
+    } catch (err) {
+      console.error('Meal analysis error:', err);
+      setScanState({ isLoading: false, result: null, error: err.message || 'Analysis failed' });
+    }
+  };
+
+  const resetScanState = () => {
+    setScanState({ isLoading: false, result: null, error: null });
   };
 
   return (
@@ -433,6 +469,9 @@ To elevate this meal, pick up some:
         deleteLog,
         updateProfile,
         analyzeMealAPI,
+        scanState,
+        runMealAnalysis,
+        resetScanState,
       }}
     >
       {children}

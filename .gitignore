@@ -6,6 +6,11 @@ chroma_recipe_db
 .kilo/
 __pycache__/
 test_red.jpg
+migration/*.ndjson
+
+# Claude Code local-only session state (not shared config)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Backend ignoring rules
 js_backend/node_modules/
@@ -16,3 +21,4 @@ js_backend/firebase-key.json
 frotend/node_modules/
 frotend/dist/
 frotend/.env
+frotend/.env.local

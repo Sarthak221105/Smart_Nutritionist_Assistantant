@@ -29,6 +29,12 @@ def extract_foods_with_gemini(image_path):
 
         response = model.generate_content([prompt, image])
 
+        # Gemini can return a response with no usable Part (e.g. non-food images,
+        # or content it declines to describe) — response.text then raises a raw
+        # SDK exception. Detect that case explicitly instead of leaking it to users.
+        if not response.candidates or not response.candidates[0].content.parts:
+            return "❌ No food items detected in this image. Try a clearer photo of your meal."
+
         # Clean and parse the response
         food_text = response.text.strip()
         # Remove any markdown formatting or extra text

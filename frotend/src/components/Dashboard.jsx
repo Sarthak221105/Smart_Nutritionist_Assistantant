@@ -339,7 +339,7 @@ const Dashboard = ({ setActiveTab }) => {
                 <select
                   value={quickMeal.mealType}
                   onChange={(e) => setQuickMeal({ ...quickMeal, mealType: e.target.value })}
-                  className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-850 px-3 py-2 rounded-xl text-sm"
+                  className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-850 px-3 py-2 rounded-xl text-sm text-slate-800 dark:text-white"
                 >
                   <option>Breakfast</option>
                   <option>Lunch</option>
@@ -407,7 +407,7 @@ const Dashboard = ({ setActiveTab }) => {
                 <button
                   type="button"
                   onClick={() => setQuickAddOpen(false)}
-                  className="flex-1 border border-slate-200 dark:border-slate-700 py-2 rounded-xl text-sm font-medium text-slate-650 hover:bg-slate-55 dark:hover:bg-slate-800 transition-colors"
+                  className="flex-1 border border-slate-200 dark:border-slate-700 py-2 rounded-xl text-sm font-medium text-slate-650 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                 >
                   Cancel
                 </button>

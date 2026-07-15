@@ -5,6 +5,7 @@ import {
   Sparkles,
   History as HistoryIcon,
   Settings as SettingsIcon,
+  LineChart,
   Menu,
   X,
   Sun,
@@ -19,6 +20,7 @@ import Dashboard from './components/Dashboard';
 import MealScanner from './components/MealScanner';
 import History from './components/History';
 import Settings from './components/Settings';
+import NutrientTrends from './components/NutrientTrends';
 
 const AppShell = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -42,6 +44,7 @@ const AppShell = () => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, component: Dashboard },
     { id: 'scanner', label: 'AI Meal Scanner', icon: Sparkles, component: MealScanner },
+    { id: 'trends', label: 'Nutrient Trends', icon: LineChart, component: NutrientTrends },
     { id: 'history', label: 'Log History', icon: HistoryIcon, component: History },
     { id: 'settings', label: 'Profile Metrics', icon: SettingsIcon, component: Settings },
   ];
@@ -136,7 +139,7 @@ const AppShell = () => {
             className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl transition-colors"
             id="mobile-theme-btn"
           >
-            {darkMode ? <Sun className="w-4 h-4 text-amber-455" /> : <Moon className="w-4 h-4" />}
+            {darkMode ? <Sun className="w-4 h-4 text-amber-450" /> : <Moon className="w-4 h-4" />}
           </button>
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -243,7 +246,7 @@ const AppShell = () => {
             {/* Dark mode toggle */}
             <button
               onClick={() => setDarkMode(!darkMode)}
-              className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-55 dark:hover:bg-slate-850 text-slate-450 dark:text-slate-350 transition-colors"
+              className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-450 dark:text-slate-350 transition-colors"
               title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
               id="desktop-theme-btn"
             >

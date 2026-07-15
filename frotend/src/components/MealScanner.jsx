@@ -4,29 +4,39 @@ import {
   Upload,
   Sparkles,
   FileText,
-  AlertTriangle,
-  Heart,
   Lightbulb,
   Check,
   Plus,
   Compass,
   UtensilsCrossed,
-  Layers,
-  ChevronRight,
-  HelpCircle,
+  Salad,
 } from 'lucide-react';
 import { useNutrition } from '../context/NutritionContext';
 
+const NUTRIENT_DISPLAY = [
+  { key: 'fiber', label: 'Fiber', unit: 'g' },
+  { key: 'iron', label: 'Iron', unit: 'mg' },
+  { key: 'calcium', label: 'Calcium', unit: 'mg' },
+  { key: 'vitaminD', label: 'Vitamin D', unit: 'mcg' },
+  { key: 'vitaminC', label: 'Vitamin C', unit: 'mg' },
+  { key: 'potassium', label: 'Potassium', unit: 'mg' },
+];
+
+const VERDICT_STYLE = {
+  helping: { color: 'bg-emerald-500 shadow-emerald-500/20', bar: 'bg-emerald-500', label: 'Helping your goal' },
+  neutral: { color: 'bg-amber-500 shadow-amber-500/20', bar: 'bg-amber-500', label: 'Neutral for your goal' },
+  hindering: { color: 'bg-rose-500 shadow-rose-500/20', bar: 'bg-rose-500', label: 'Hindering your goal' },
+};
+
 const MealScanner = () => {
-  const { analyzeMealAPI, addLog, profile } = useNutrition();
+  const { scanState, runMealAnalysis, addLog, profile } = useNutrition();
+  const { isLoading, result } = scanState;
   const [inputMode, setInputMode] = useState('upload'); // 'upload' or 'text'
   const [mealText, setMealText] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [activeResultTab, setActiveResultTab] = useState('report'); // 'report' or 'consultation'
-  const [result, setResult] = useState(null);
 
   // Preference overrides for this scan
   const [scanPreferences, setScanPreferences] = useState({
@@ -90,17 +100,9 @@ const MealScanner = () => {
     if (inputMode === 'text' && !mealText.trim()) return;
     if (inputMode === 'upload' && !selectedFile) return;
 
-    setIsLoading(true);
-    setResult(null);
-
-    try {
-      const data = await analyzeMealAPI(selectedFile, inputMode === 'text' ? mealText : null, scanPreferences);
-      setResult(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
-    }
+    // Lives in NutritionContext, not local state — the request and its result
+    // survive navigating to a different tab and back (see runMealAnalysis).
+    await runMealAnalysis(selectedFile, inputMode === 'text' ? mealText : null, scanPreferences);
   };
 
   const handleAddToLog = () => {
@@ -108,10 +110,11 @@ const MealScanner = () => {
     addLog({
       mealType: scanPreferences.mealType,
       foodItems: result.foodItems,
-      calories: result.calories,
-      protein: result.protein,
-      carbs: result.carbs,
-      fats: result.fats,
+      calories: result.nutrients.calories,
+      protein: result.nutrients.protein,
+      carbs: result.nutrients.carbs,
+      fats: result.nutrients.fats,
+      nutrients: result.nutrients,
     });
   };
 
@@ -214,7 +217,7 @@ const MealScanner = () => {
               className={`py-2 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
                 inputMode === 'upload'
                   ? 'bg-white dark:bg-slate-800 text-brand-700 dark:text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
               }`}
               id="tab-upload-mode"
             >
@@ -225,7 +228,7 @@ const MealScanner = () => {
               className={`py-2 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
                 inputMode === 'text'
                   ? 'bg-white dark:bg-slate-800 text-brand-700 dark:text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
               }`}
               id="tab-text-mode"
             >
@@ -340,7 +343,7 @@ const MealScanner = () => {
                   <select
                     value={scanPreferences.goal}
                     onChange={(e) => setScanPreferences({ ...scanPreferences, goal: e.target.value })}
-                    className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-850 px-2 py-1.5 rounded-lg font-medium"
+                    className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-850 px-2 py-1.5 rounded-lg font-medium text-slate-800 dark:text-white"
                   >
                     <option value="lose">Lose Weight</option>
                     <option value="maintain">Maintain Weight</option>
@@ -353,7 +356,7 @@ const MealScanner = () => {
                   <select
                     value={scanPreferences.dietType}
                     onChange={(e) => setScanPreferences({ ...scanPreferences, dietType: e.target.value })}
-                    className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-850 px-2 py-1.5 rounded-lg font-medium"
+                    className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-850 px-2 py-1.5 rounded-lg font-medium text-slate-800 dark:text-white"
                   >
                     <option value="non-veg">Non-Vegetarian</option>
                     <option value="vegetarian">Vegetarian</option>
@@ -502,22 +505,19 @@ const MealScanner = () => {
                 </button>
               </div>
 
-              {/* Goal Alignment Gauge */}
+              {/* Goal Alignment */}
               <div className="bg-slate-50 dark:bg-slate-850/50 rounded-2xl p-4 flex flex-col md:flex-row items-center gap-4 justify-between">
                 <div className="flex items-center gap-3">
-                  {/* Visual gauge index */}
                   <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-extrabold text-lg shadow-md ${
-                    result.alignmentScore >= 8
-                      ? 'bg-emerald-500 shadow-emerald-500/20'
-                      : result.alignmentScore >= 5
-                      ? 'bg-amber-500 shadow-amber-500/20'
-                      : 'bg-rose-500 shadow-rose-500/20'
+                    (VERDICT_STYLE[result.goalAlignment.verdict] || VERDICT_STYLE.neutral).color
                   }`}>
-                    {result.alignmentScore}
+                    {result.goalAlignment.score}
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm text-slate-800 dark:text-white">Goal Alignment Score</h4>
-                    <p className="text-xs text-slate-400 max-w-sm md:max-w-xs">{result.explanation}</p>
+                    <h4 className="font-bold text-sm text-slate-800 dark:text-white">
+                      {(VERDICT_STYLE[result.goalAlignment.verdict] || VERDICT_STYLE.neutral).label}
+                    </h4>
+                    <p className="text-xs text-slate-400 max-w-sm md:max-w-xs">{result.goalAlignment.summary}</p>
                   </div>
                 </div>
                 <div className="w-full md:w-44 flex flex-col gap-1.5">
@@ -528,69 +528,84 @@ const MealScanner = () => {
                   <div className="w-full bg-slate-200 dark:bg-slate-850 h-2 rounded-full overflow-hidden">
                     <motion.div
                       initial={{ width: 0 }}
-                      animate={{ width: `${result.alignmentScore * 10}%` }}
+                      animate={{ width: `${result.goalAlignment.score * 10}%` }}
                       transition={{ duration: 1 }}
-                      className={`h-full rounded-full ${
-                        result.alignmentScore >= 8 ? 'bg-emerald-500' : result.alignmentScore >= 5 ? 'bg-amber-500' : 'bg-rose-500'
-                      }`}
+                      className={`h-full rounded-full ${(VERDICT_STYLE[result.goalAlignment.verdict] || VERDICT_STYLE.neutral).bar}`}
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Quick statistics cards */}
+              {/* Macro breakdown */}
               <div className="grid grid-cols-4 gap-2">
                 <div className="bg-slate-50 dark:bg-slate-850 p-3 rounded-xl text-center">
                   <p className="text-[10px] font-semibold text-slate-400 uppercase">Energy</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white font-mono mt-1">{result.calories} <span className="text-[10px] text-slate-400 font-normal">kcal</span></p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white font-mono mt-1">{result.nutrients.calories} <span className="text-[10px] text-slate-400 font-normal">kcal</span></p>
                 </div>
                 <div className="bg-slate-50 dark:bg-slate-850 p-3 rounded-xl text-center border-b-2 border-emerald-500">
                   <p className="text-[10px] font-semibold text-slate-400 uppercase">Protein</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white font-mono mt-1">{result.protein}g</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white font-mono mt-1">{result.nutrients.protein}g</p>
                 </div>
                 <div className="bg-slate-50 dark:bg-slate-850 p-3 rounded-xl text-center border-b-2 border-amber-500">
                   <p className="text-[10px] font-semibold text-slate-400 uppercase">Carbs</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white font-mono mt-1">{result.carbs}g</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white font-mono mt-1">{result.nutrients.carbs}g</p>
                 </div>
                 <div className="bg-slate-50 dark:bg-slate-850 p-3 rounded-xl text-center border-b-2 border-rose-500">
                   <p className="text-[10px] font-semibold text-slate-400 uppercase">Fat</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white font-mono mt-1">{result.fats}g</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white font-mono mt-1">{result.nutrients.fats}g</p>
                 </div>
               </div>
 
-              {/* AI Report Tabs */}
-              <div className="space-y-4">
-                <div className="border-b border-slate-100 dark:border-slate-800 flex gap-4 text-sm font-semibold">
-                  <button
-                    onClick={() => setActiveResultTab('report')}
-                    className={`pb-2.5 border-b-2 transition-colors flex items-center gap-1.5 ${
-                      activeResultTab === 'report'
-                        ? 'border-brand-500 text-brand-650 dark:text-white'
-                        : 'border-transparent text-slate-400 hover:text-slate-650'
-                    }`}
-                    id="tab-nutrition-report"
-                  >
-                    <Layers className="w-4 h-4" /> Nutrition & Progress
-                  </button>
-                  <button
-                    onClick={() => setActiveResultTab('consultation')}
-                    className={`pb-2.5 border-b-2 transition-colors flex items-center gap-1.5 ${
-                      activeResultTab === 'consultation'
-                        ? 'border-brand-500 text-brand-650 dark:text-white'
-                        : 'border-transparent text-slate-400 hover:text-slate-650'
-                    }`}
-                    id="tab-ai-recommendations"
-                  >
-                    <Compass className="w-4 h-4" /> AI Recommendations
-                  </button>
-                </div>
+              {/* Micronutrient breakdown */}
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {NUTRIENT_DISPLAY.map(({ key, label, unit }) => (
+                  <div key={key} className="bg-slate-50 dark:bg-slate-850 p-2.5 rounded-xl text-center">
+                    <p className="text-[9px] font-semibold text-slate-400 uppercase">{label}</p>
+                    <p className="text-sm font-bold text-slate-800 dark:text-white font-mono mt-0.5">
+                      {result.nutrients[key] ?? 0}<span className="text-[9px] text-slate-400 font-normal">{unit}</span>
+                    </p>
+                  </div>
+                ))}
+              </div>
 
-                {/* Render report text */}
-                <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-1">
-                  {activeResultTab === 'report'
-                    ? renderMarkdown(result.nutritionReport)
-                    : renderMarkdown(result.aiConsultation)}
+              {/* Extracted food items */}
+              <div>
+                <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Salad className="w-3.5 h-3.5" /> Extracted Food Items
+                </h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {result.foodItems.map((item, idx) => (
+                    <span key={idx} className="text-xs font-medium capitalize bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2.5 py-1 rounded-lg">
+                      {item}
+                    </span>
+                  ))}
                 </div>
+              </div>
+
+              {/* Short, concrete suggestion */}
+              <div className="bg-brand-50/60 dark:bg-brand-950/20 border border-brand-100 dark:border-brand-900/30 rounded-2xl p-4 flex gap-3 items-start">
+                <Lightbulb className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-bold text-sm text-slate-800 dark:text-white mb-0.5">Suggestion</h4>
+                  <p className="text-xs text-slate-600 dark:text-slate-350 leading-relaxed">{result.suggestion}</p>
+                </div>
+              </div>
+
+              {/* AI Recommendations (separate, deliberately detailed recipe suggestions) */}
+              <div className="space-y-3">
+                <button
+                  onClick={() => setActiveResultTab(activeResultTab === 'consultation' ? 'report' : 'consultation')}
+                  className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-sm font-semibold text-slate-700 dark:text-slate-300"
+                  id="tab-ai-recommendations"
+                >
+                  <span className="flex items-center gap-1.5"><Compass className="w-4 h-4" /> AI Recipe Recommendations</span>
+                  <span className="text-xs text-slate-400">{activeResultTab === 'consultation' ? 'Hide' : 'Show'}</span>
+                </button>
+                {activeResultTab === 'consultation' && (
+                  <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-1">
+                    {renderMarkdown(result.aiConsultation)}
+                  </div>
+                )}
               </div>
             </motion.div>
           ) : (

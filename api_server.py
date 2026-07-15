@@ -1,6 +1,6 @@
 import os
-import re
 import json
+import threading
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -14,6 +14,33 @@ load_dotenv()
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
+
+
+def _warm_recipe_model():
+    """
+    Loads the sentence-transformers model in the background right after boot,
+    instead of letting it load synchronously inside whichever user's request
+    happens to trigger the first recipe search (recipe_query.search_recipe,
+    called from llm_model.ai_nutritionist) — confirmed to take 30-100+s cold,
+    which was showing up as multi-minute /analyze latency.
+
+    Note: this does NOT reduce peak memory usage, only WHEN it's paid — the
+    model (~400MB+ with its torch/tensorflow dependencies) still has to load
+    into memory at some point before recipe search can run. On a
+    memory-constrained host (this app's comments elsewhere reference Render's
+    512MB free tier), that peak may simply not fit regardless of eager vs
+    lazy loading. If this service OOMs on such a host, disabling eager
+    warm-up here won't fix it — the underlying memory ceiling is the
+    constraint, not the timing of when it's hit.
+    """
+    try:
+        from recipe_query import _get_model
+        _get_model()
+    except Exception as e:
+        print(f"Recipe model warm-up failed (will retry lazily on first request): {e}")
+
+
+threading.Thread(target=_warm_recipe_model, daemon=True).start()
 
 class StreamlitUploadedFileWrapper:
     """Wraps Flask file upload object to support Streamlit file interface (.getvalue())"""
@@ -35,7 +62,7 @@ def analyze():
     try:
         # Lazy import heavy modules only when endpoint is called
         from text_extraction import process_input
-        from nutrition_info import analyze_meal
+        from nutrition_info import analyze_meal, get_meal_nutrient_totals, prefetch_foods_data
         from llm_model import ai_nutritionist
         from diet_analyzer import analyze_diet_progress
 
@@ -71,35 +98,32 @@ def analyze():
         # Convert to ingredients list
         detected_foods = [food.strip() for food in extracted_text.split(",") if food.strip()]
 
-        # 3. Analyze nutrition values
-        nutrition_summary = analyze_meal(extracted_text)
+        # 3. Fetch USDA data for each detected food exactly once, shared between
+        # the legacy text summary and the structured totals below (previously
+        # each fetched the same foods independently, ~doubling USDA latency).
+        foods_data = prefetch_foods_data(extracted_text)
+        nutrition_summary = analyze_meal(extracted_text, foods_data=foods_data)
 
-        # 4. Parse macros from summary string
-        # Summary entries look like: description (ID): Energy: X kcal, Protein: Y g, Fat: Z g, Carbs: W g
-        calories_list = re.findall(r'Energy:\s*([\d.]+)\s*kcal', nutrition_summary, re.IGNORECASE)
-        protein_list = re.findall(r'Protein:\s*([\d.]+)\s*g', nutrition_summary, re.IGNORECASE)
-        fat_list = re.findall(r'Fat:\s*([\d.]+)\s*g', nutrition_summary, re.IGNORECASE)
-        carbs_list = re.findall(r'Carbs:\s*([\d.]+)\s*g', nutrition_summary, re.IGNORECASE)
+        # 3b. Structured macro + micronutrient totals for the Nutrient Gap Tracker
+        try:
+            nutrient_totals = get_meal_nutrient_totals(extracted_text, foods_data=foods_data)
+        except Exception as e:
+            print(f"Error computing structured nutrient totals: {e}")
+            nutrient_totals = {}
 
-        total_calories = sum(float(c) for c in calories_list if c != 'N/A')
-        total_protein = sum(float(p) for p in protein_list if p != 'N/A')
-        total_fats = sum(float(f) for f in fat_list if f != 'N/A')
-        total_carbs = sum(float(cb) for cb in carbs_list if cb != 'N/A')
+        # 4. Macro totals — sourced from the real USDA-backed structured totals
+        # (nutrient_totals, computed above), not from parsing analyze_meal()'s text.
+        # analyze_meal() always returns "Could not add to database" for every food
+        # because ChromaDB is unconditionally bypassed (see nutrition_info.py
+        # _get_collection()), so regex-parsing it for macros always found nothing
+        # and silently fell back to fixed placeholder numbers for every meal.
+        total_calories = round(nutrient_totals.get("calories", 0))
+        total_protein = round(nutrient_totals.get("protein", 0), 1)
+        total_carbs = round(nutrient_totals.get("carbs", 0), 1)
+        total_fats = round(nutrient_totals.get("fat", 0), 1)
 
-        # Round values
-        total_calories = round(total_calories)
-        total_protein = round(total_protein, 1)
-        total_carbs = round(total_carbs, 1)
-        total_fats = round(total_fats, 1)
-
-        # Fallback values if nothing parsed
-        if total_calories == 0:
-            total_calories = 350
-            total_protein = 15.0
-            total_carbs = 40.0
-            total_fats = 10.0
-
-        # 5. Get diet progress analysis & recommendations
+        # 5. Get diet progress analysis (now a compact structured dict — see
+        # diet_analyzer.py — no more free-text prose to parse) & recommendations
         diet_analysis = analyze_diet_progress(
             nutrition_summary=nutrition_summary,
             user_goal=goal,
@@ -115,34 +139,32 @@ def analyze():
             cuisine_preference=cuisine_preference.lower() if cuisine_preference != "Any" else None
         )
 
-        # Parse score from diet analysis
-        score = 8 # default
-        score_match = re.search(r'(?:score|alignment|rate).*?(\d+)', diet_analysis, re.IGNORECASE)
-        if score_match:
-            try:
-                score = int(score_match.group(1))
-                if score > 10:
-                    score = 10
-            except:
-                pass
-
-        explanation = "This meal analysis matches your profile preferences."
-        explanation_match = re.search(r'### 🎯 PROGRESS ASSESSMENT\s*\n*(.*?)\n', diet_analysis, re.IGNORECASE)
-        if explanation_match:
-            explanation = explanation_match.group(1).replace('- ', '').strip()
-
-        # 6. Build response
+        # 6. Build response — structured, not prose. `nutrients` holds every
+        # macro/micronutrient in one place; `goalAlignment` + `suggestion` are
+        # the compact goal-fit assessment. `aiConsultation` (the separate,
+        # deliberately detailed recipe-recommendation feature) is unchanged.
         payload = {
             "mealType": meal_type,
             "foodItems": detected_foods,
-            "calories": total_calories,
-            "protein": total_protein,
-            "carbs": total_carbs,
-            "fats": total_fats,
-            "nutritionReport": diet_analysis,
+            "nutrients": {
+                "calories": total_calories,
+                "protein": total_protein,
+                "carbs": total_carbs,
+                "fats": total_fats,
+                "fiber": nutrient_totals.get("fiber", 0),
+                "iron": nutrient_totals.get("iron", 0),
+                "calcium": nutrient_totals.get("calcium", 0),
+                "vitaminD": nutrient_totals.get("vitaminD", 0),
+                "vitaminC": nutrient_totals.get("vitaminC", 0),
+                "potassium": nutrient_totals.get("potassium", 0),
+            },
+            "goalAlignment": {
+                "score": diet_analysis["score"],
+                "verdict": diet_analysis["verdict"],
+                "summary": diet_analysis["summary"],
+            },
+            "suggestion": diet_analysis["suggestion"],
             "aiConsultation": ai_consultation,
-            "alignmentScore": score,
-            "explanation": explanation
         }
 
         return jsonify(payload)

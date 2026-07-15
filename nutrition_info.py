@@ -11,6 +11,17 @@ load_dotenv()
 USDA_API_KEY = os.getenv("USDA_API_KEY")
 BASE_URL = "https://api.nal.usda.gov/fdc/v1/foods/search"
 
+# Maps our tracked micronutrient keys to the USDA FoodData Central nutrient name
+# and the unit we report it in. Extend this to track more nutrients over time.
+TRACKED_NUTRIENTS = {
+    "fiber": {"usda_name": "Fiber, total dietary", "unit": "g"},
+    "iron": {"usda_name": "Iron, Fe", "unit": "mg"},
+    "calcium": {"usda_name": "Calcium, Ca", "unit": "mg"},
+    "vitaminD": {"usda_name": "Vitamin D (D2 + D3)", "unit": "mcg"},
+    "vitaminC": {"usda_name": "Vitamin C, total ascorbic acid", "unit": "mg"},
+    "potassium": {"usda_name": "Potassium, K", "unit": "mg"},
+}
+
 # Lazy ChromaDB initialization — don't load at import time
 _client = None
 _collection = None
@@ -19,6 +30,20 @@ _collection = None
 def _get_collection():
     """Bypassed for Render deployment compatibility to avoid heavy memory usage."""
     return None
+
+
+# Shared HTTP session for USDA calls. requests.get() opens a fresh TCP+TLS
+# connection every call (~0.9-1.2s handshake, confirmed by measurement); reusing
+# one Session lets urllib3 keep the connection alive across calls, so only the
+# first request in a process pays the handshake.
+_usda_session = None
+
+
+def _get_usda_session():
+    global _usda_session
+    if _usda_session is None:
+        _usda_session = requests.Session()
+    return _usda_session
 
 
 # Fetch from USDA API
@@ -32,7 +57,8 @@ def fetch_food_data(food_name):
     }
 
     try:
-        response = requests.get(BASE_URL, params=params, timeout=10)
+        session = _get_usda_session()
+        response = session.get(BASE_URL, params=params, timeout=10)
 
         if response.status_code != 200:
             print(f"USDA API Error ({response.status_code}): {response.text}")
@@ -60,6 +86,12 @@ def fetch_food_data(food_name):
         fat = nutrients.get('Total lipid (fat)', 'N/A')
         carbs = nutrients.get('Carbohydrate, by difference', 'N/A')
 
+        # Micronutrients tracked for the Nutrient Gap Tracker (may be missing per food)
+        micros = {
+            key: nutrients.get(spec["usda_name"], 0) or 0
+            for key, spec in TRACKED_NUTRIENTS.items()
+        }
+
         doc = (
             f"{item.get('description', 'Unknown').upper()} (FDC ID: {item.get('fdcId', 'N/A')}): "
             f"Energy: {energy} kcal, "
@@ -72,13 +104,21 @@ def fetch_food_data(food_name):
             "id": str(item.get("fdcId", food_name)),
             "document": doc,
             "name": food_name.lower(),
+            "nutrients": {
+                "calories": energy if isinstance(energy, (int, float)) else 0,
+                "protein": protein if isinstance(protein, (int, float)) else 0,
+                "fat": fat if isinstance(fat, (int, float)) else 0,
+                "carbs": carbs if isinstance(carbs, (int, float)) else 0,
+                **micros,
+            },
             "metadata": {
                 "source": "USDA",
                 "name": food_name.lower(),
                 "energy": energy,
                 "protein": protein,
                 "fat": fat,
-                "carbs": carbs
+                "carbs": carbs,
+                **{f"{key}_{TRACKED_NUTRIENTS[key]['unit']}": val for key, val in micros.items()}
             }
         }
 
@@ -173,8 +213,19 @@ def query_chroma_for_food(food_name):
         return None
 
 
+# Fetches USDA data for a list of foods exactly once each, so callers that need
+# both the legacy text summary (analyze_meal) and the structured totals
+# (get_meal_nutrient_totals) for the same meal can share one set of network
+# calls instead of each independently re-fetching every food.
+def prefetch_foods_data(meal_text):
+    if not meal_text or not isinstance(meal_text, str):
+        return {}
+    foods = extract_foods_from_text(meal_text)
+    return {food: fetch_food_data(food) for food in foods}
+
+
 # Analyze a meal - improved version
-def analyze_meal(meal_text):
+def analyze_meal(meal_text, foods_data=None):
     if not meal_text or not isinstance(meal_text, str):
         return "Please provide a valid meal description."
 
@@ -198,7 +249,7 @@ def analyze_meal(meal_text):
                 continue
         else:
             print(f"'{food}' not found in ChromaDB. Fetching from USDA API...")
-            item = fetch_food_data(food)
+            item = foods_data.get(food) if foods_data else fetch_food_data(food)
             if item:
                 if add_to_chromadb(item):
                     successful_fetches += 1
@@ -216,3 +267,24 @@ def analyze_meal(meal_text):
         return "No nutrition information could be retrieved for any of the provided foods."
 
     return "\n".join(results_summary)
+
+
+# Structured macro + micronutrient totals for the Nutrient Gap Tracker.
+# Fetches directly from USDA rather than routing through analyze_meal()'s
+# ChromaDB-backed summary, so it works even while the vector store is bypassed.
+def get_meal_nutrient_totals(meal_text, foods_data=None):
+    if not meal_text or not isinstance(meal_text, str):
+        return {}
+
+    foods = extract_foods_from_text(meal_text)
+    totals = {"calories": 0, "protein": 0, "fat": 0, "carbs": 0}
+    totals.update({key: 0 for key in TRACKED_NUTRIENTS})
+
+    for food in foods:
+        item = foods_data.get(food) if foods_data else fetch_food_data(food)
+        if not item:
+            continue
+        for key, value in item["nutrients"].items():
+            totals[key] = round(totals.get(key, 0) + (value or 0), 2)
+
+    return totals
