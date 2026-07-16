@@ -338,6 +338,21 @@ const MealScanner = () => {
             <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-4">
               <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">Preferences Customization</span>
 
+              <div className="text-xs">
+                <label className="block text-slate-500 font-medium mb-1">Meal Type</label>
+                <select
+                  value={scanPreferences.mealType}
+                  onChange={(e) => setScanPreferences({ ...scanPreferences, mealType: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-850 px-2 py-1.5 rounded-lg font-medium text-slate-800 dark:text-white"
+                  id="scan-meal-type"
+                >
+                  <option value="Breakfast">Breakfast</option>
+                  <option value="Lunch">Lunch</option>
+                  <option value="Dinner">Dinner</option>
+                  <option value="Snack">Snack</option>
+                </select>
+              </div>
+
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div>
                   <label className="block text-slate-500 font-medium mb-1">Meal Target Goal</label>
