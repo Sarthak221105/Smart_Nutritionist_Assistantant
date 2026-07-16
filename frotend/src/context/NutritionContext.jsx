@@ -210,232 +210,43 @@ export const NutritionProvider = ({ children }) => {
     }
   };
 
-  // Try API call to analyze meals, falling back to simulation if backend is unavailable
+  // Calls the backend to analyze a meal. Throws a clear, user-facing error on
+  // any failure. We intentionally do NOT fabricate mock nutrition data on
+  // failure anymore — presenting made-up macros as a real result is misleading.
   const analyzeMealAPI = async (file, textInput, userPreferences) => {
+    if (!file && !textInput) {
+      throw new Error('Please provide a meal image or type ingredients first.');
+    }
+
+    const formData = new FormData();
+    if (file) formData.append('photo', file);
+    if (textInput) formData.append('text', textInput);
+    formData.append('goal', userPreferences.goal || 'lose');
+    formData.append('dietType', userPreferences.dietType || 'non-veg');
+    formData.append('allergies', JSON.stringify(userPreferences.allergies || []));
+    formData.append('restrictions', JSON.stringify(userPreferences.restrictions || []));
+    formData.append('cuisinePreference', userPreferences.cuisinePreference || 'Any');
+    formData.append('mealType', userPreferences.mealType || 'Lunch');
+
+    let res;
     try {
-      if (file || textInput) {
-        const formData = new FormData();
-        if (file) formData.append('photo', file);
-        if (textInput) formData.append('text', textInput);
-        
-        formData.append('goal', userPreferences.goal || 'lose');
-        formData.append('dietType', userPreferences.dietType || 'non-veg');
-        formData.append('allergies', JSON.stringify(userPreferences.allergies || []));
-        formData.append('restrictions', JSON.stringify(userPreferences.restrictions || []));
-        formData.append('cuisinePreference', userPreferences.cuisinePreference || 'Any');
-        formData.append('mealType', userPreferences.mealType || 'Lunch');
-
-        const res = await fetch(`${PYTHON_BACKEND}/analyze`, {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          showToast('Analysis completed successfully via backend AI!');
-          return data;
-        } else {
-          const errData = await res.json().catch(() => ({}));
-          const errMsg = errData.message || 'Backend API returned error';
-          console.warn(`${errMsg}, falling back to mock simulation.`);
-          showToast(`API Warning: ${errMsg.replace('❌', '')}`, 'info');
-        }
-      }
+      res = await fetch(`${PYTHON_BACKEND}/analyze`, { method: 'POST', body: formData });
     } catch (e) {
-      console.warn('Backend not reachable, falling back to mock simulation.', e);
+      console.error('Analysis service unreachable:', e);
+      throw new Error("Couldn't reach the analysis service. Please check your connection and try again.");
     }
 
-    // Simulating server request latency for standalone demo
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    // High quality mock AI analysis generator
-    const query = textInput || (file ? file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ") : "healthy meal");
-    const parsedIngredients = query.toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
-    
-    // Core database of common ingredients for nutritional calculation
-    const foodDatabase = {
-      egg: { calories: 78, protein: 6.3, carbs: 0.6, fats: 5.3 },
-      eggs: { calories: 156, protein: 12.6, carbs: 1.2, fats: 10.6 },
-      banana: { calories: 89, protein: 1.1, carbs: 23, fats: 0.3 },
-      milk: { calories: 120, protein: 8, carbs: 12, fats: 5 },
-      rice: { calories: 205, protein: 4.2, carbs: 45, fats: 0.4 },
-      chicken: { calories: 165, protein: 31, carbs: 0, fats: 3.6 },
-      breast: { calories: 165, protein: 31, carbs: 0, fats: 3.6 },
-      salmon: { calories: 208, protein: 22, carbs: 0, fats: 13 },
-      spinach: { calories: 23, protein: 2.9, carbs: 3.6, fats: 0.4 },
-      oats: { calories: 150, protein: 5, carbs: 27, fats: 2.5 },
-      honey: { calories: 64, protein: 0.1, carbs: 17, fats: 0 },
-      almonds: { calories: 164, protein: 6, carbs: 6, fats: 14 },
-      avocado: { calories: 160, protein: 2, carbs: 8.5, fats: 14.7 },
-      bread: { calories: 79, protein: 3, carbs: 15, fats: 1 },
-      apple: { calories: 95, protein: 0.5, carbs: 25, fats: 0.3 },
-      salad: { calories: 120, protein: 3, carbs: 10, fats: 8 },
-      yogurt: { calories: 130, protein: 12, carbs: 6, fats: 4 },
-      steak: { calories: 271, protein: 25, carbs: 0, fats: 19 },
-      potatoes: { calories: 110, protein: 2, carbs: 26, fats: 0 },
-      quinoa: { calories: 120, protein: 4, carbs: 21, fats: 2 },
-      broccoli: { calories: 34, protein: 2.8, carbs: 7, fats: 0.4 },
-    };
-
-    let totalCalories = 0;
-    let totalProtein = 0;
-    let totalCarbs = 0;
-    let totalFats = 0;
-    let detected = [];
-
-    // Rough per-ingredient micronutrient estimate for the offline demo fallback only —
-    // the real backend path returns actual USDA-derived values in result.nutrients.
-    const microDatabase = {
-      egg: { fiber: 0, iron: 0.9, calcium: 25, vitaminD: 1, vitaminC: 0, potassium: 69 },
-      eggs: { fiber: 0, iron: 1.8, calcium: 50, vitaminD: 2, vitaminC: 0, potassium: 138 },
-      banana: { fiber: 2.6, iron: 0.3, calcium: 5, vitaminD: 0, vitaminC: 8.7, potassium: 358 },
-      milk: { fiber: 0, iron: 0.1, calcium: 300, vitaminD: 2.5, vitaminC: 0, potassium: 322 },
-      rice: { fiber: 0.6, iron: 1.9, calcium: 10, vitaminD: 0, vitaminC: 0, potassium: 55 },
-      chicken: { fiber: 0, iron: 1.0, calcium: 15, vitaminD: 0.1, vitaminC: 0, potassium: 256 },
-      breast: { fiber: 0, iron: 1.0, calcium: 15, vitaminD: 0.1, vitaminC: 0, potassium: 256 },
-      salmon: { fiber: 0, iron: 0.5, calcium: 12, vitaminD: 11, vitaminC: 0, potassium: 384 },
-      spinach: { fiber: 2.2, iron: 2.7, calcium: 99, vitaminD: 0, vitaminC: 28, potassium: 558 },
-      oats: { fiber: 4, iron: 2, calcium: 21, vitaminD: 0, vitaminC: 0, potassium: 164 },
-      honey: { fiber: 0, iron: 0.1, calcium: 1, vitaminD: 0, vitaminC: 0.5, potassium: 11 },
-      almonds: { fiber: 3.5, iron: 1.1, calcium: 76, vitaminD: 0, vitaminC: 0, potassium: 208 },
-      avocado: { fiber: 6.7, iron: 0.6, calcium: 12, vitaminD: 0, vitaminC: 10, potassium: 485 },
-      bread: { fiber: 1.2, iron: 1, calcium: 40, vitaminD: 0, vitaminC: 0, potassium: 60 },
-      apple: { fiber: 4.4, iron: 0.2, calcium: 6, vitaminD: 0, vitaminC: 8, potassium: 195 },
-      broccoli: { fiber: 2.6, iron: 0.7, calcium: 47, vitaminD: 0, vitaminC: 89, potassium: 316 },
-      quinoa: { fiber: 2.8, iron: 1.5, calcium: 17, vitaminD: 0, vitaminC: 0, potassium: 172 },
-    };
-    const totalMicros = { fiber: 0, iron: 0, calcium: 0, vitaminD: 0, vitaminC: 0, potassium: 0 };
-
-    // Analyze query to match database items
-    parsedIngredients.forEach(ing => {
-      let matched = false;
-      Object.keys(foodDatabase).forEach(dbKey => {
-        if (ing.includes(dbKey) && !matched) {
-          const item = foodDatabase[dbKey];
-          totalCalories += item.calories;
-          totalProtein += item.protein;
-          totalCarbs += item.carbs;
-          totalFats += item.fats;
-          detected.push(ing);
-          matched = true;
-
-          const micros = microDatabase[dbKey];
-          if (micros) {
-            Object.keys(totalMicros).forEach((key) => { totalMicros[key] += micros[key] || 0; });
-          }
-        }
-      });
-      if (!matched) {
-        // Generate random but realistic nutrition for unknown items
-        const randCal = Math.floor(Math.random() * 150) + 50;
-        const randProt = Math.floor(Math.random() * 15) + 2;
-        const randCarb = Math.floor(Math.random() * 25) + 5;
-        const randFat = Math.floor(Math.random() * 10) + 1;
-
-        totalCalories += randCal;
-        totalProtein += randProt;
-        totalCarbs += randCarb;
-        totalFats += randFat;
-        detected.push(ing);
-
-        // Rough micronutrient estimate for unrecognized items too
-        totalMicros.fiber += Math.random() * 2;
-        totalMicros.iron += Math.random() * 1.5;
-        totalMicros.calcium += Math.random() * 40;
-        totalMicros.vitaminD += Math.random() * 0.5;
-        totalMicros.vitaminC += Math.random() * 10;
-        totalMicros.potassium += Math.random() * 150;
-      }
-    });
-
-    if (detected.length === 0) {
-      // Default fallback if query is empty or completely unrecognizable
-      totalCalories = 450;
-      totalProtein = 22;
-      totalCarbs = 48;
-      totalFats = 16;
-      detected = ['mixed grain bowl', 'healthy protein source', 'green vegetables'];
-      Object.assign(totalMicros, { fiber: 6, iron: 2.5, calcium: 120, vitaminD: 1, vitaminC: 15, potassium: 450 });
+    if (res.ok) {
+      const data = await res.json();
+      showToast('Analysis complete!');
+      return data;
     }
 
-    Object.keys(totalMicros).forEach((key) => { totalMicros[key] = Math.round(totalMicros[key] * 10) / 10; });
-
-    // Format macro precision
-    totalCalories = Math.round(totalCalories);
-    totalProtein = Math.round(totalProtein * 10) / 10;
-    totalCarbs = Math.round(totalCarbs * 10) / 10;
-    totalFats = Math.round(totalFats * 10) / 10;
-
-    // Alignment Score Calculation
-    let score = 8; // base
-    const userGoal = userPreferences.goal || 'lose';
-    if (userGoal === 'lose' && totalCalories > 600) score -= 2;
-    if (userGoal === 'lose' && totalProtein > 25) score += 2;
-    if (userGoal === 'gain' && totalCalories > 600) score += 2;
-    if (userGoal === 'gain' && totalProtein < 15) score -= 2;
-    if (userPreferences.dietType === 'vegan' && detected.some(d => d.includes('chicken') || d.includes('egg') || d.includes('milk') || d.includes('steak'))) {
-      score = 2; // Conflict with vegan preference
-    }
-    score = Math.min(Math.max(score, 1), 10); // Clamp between 1 and 10
-
-    const titleCase = (str) => str.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-
-    const alignmentExplanation = score >= 8
-      ? `This meal is highly supportive of your active health targets. It contains premium quality macronutrients that fuel muscle recovery and keep insulin spikes stable.`
-      : score >= 5
-        ? `This meal is moderately supportive but could be optimized. Consider replacing fast-digesting carbohydrates with slow-burning complex carbs.`
-        : `This meal is sub-optimal for your targets. The calorie-to-protein ratio is high, which makes it easy to overshoot your calorie budget.`;
-
-    const generatedAiConsultation = `
-# EXPERT AI NUTRITIONIST CONSULTATION
-
-## MEAL RECOMMENDATIONS
-
-### Option 1: ${titleCase(detected[0] || 'Superfood')} & Grain Fusion Bowl
-* **Preparation**: Combine cooked ${detected[0] || 'grains'} with spinach, top with light vinaigrette, toasted sesame seeds, and your primary protein choice. Sauté lightly in a teaspoon of olive oil.
-* **Nutritional Benefits**: Highly supportive for **${userGoal} weight** goals. Offers high-quality dietary fiber and high satiety levels.
-* **Macro Breakdown**: ~${Math.round(totalProtein * 0.9)}g Protein | ~${Math.round(totalCarbs * 0.8)}g Carbs | ~${Math.round(totalFats * 0.7)}g Fats.
-* **Additional Tips**: Add avocado slices for healthy monosaturated fats, or pinch of sea salt.
-
-### Option 2: High-Protein Sauté with Zesty Herb Dressing
-* **Preparation**: Sauté ${detected.join(' and ')} in a skillet with minced garlic. Drizzle fresh lemon juice and chopped parsley or cilantro on top prior to serving.
-* **Nutritional Benefits**: Low glycemic load, reduces bloating, and maintains consistent energy releases.
-* **Macro Breakdown**: ~${Math.round(totalProtein * 1.1)}g Protein | ~${Math.round(totalCarbs * 0.5)}g Carbs | ~${Math.round(totalFats * 0.9)}g Fats.
-* **Additional Tips**: If vegan, replace meat components with extra-firm cubed organic tofu or tempeh.
-
-## GOAL-SPECIFIC ADVICE
-To successfully **${userGoal === 'lose' ? 'lose weight' : userGoal === 'gain' ? 'gain mass' : 'maintain your shape'}**, focus on eating volume-dense foods with low calorie concentration. This includes vegetables like broccoli, spinach, and asparagus. Stay hydrated with 3 liters of water daily.
-
-## SHOPPING SUGGESTIONS
-To elevate this meal, pick up some:
-- Organic extra virgin olive oil
-- Fresh baby spinach or kale
-- Himalayan pink salt
-- Hemp seeds or chia seeds for omega-3 enhancement
-`;
-
-    return {
-      mealType: userPreferences.mealType || 'Lunch',
-      foodItems: detected,
-      nutrients: {
-        calories: totalCalories,
-        protein: totalProtein,
-        carbs: totalCarbs,
-        fats: totalFats,
-        ...totalMicros,
-      },
-      goalAlignment: {
-        score,
-        verdict: score >= 7 ? 'helping' : score >= 4 ? 'neutral' : 'hindering',
-        summary: alignmentExplanation,
-      },
-      suggestion: userGoal === 'lose'
-        ? 'Reduce portion size by 15% or add a leafy green side salad to increase fiber.'
-        : userGoal === 'gain'
-          ? 'Add a serving of complex carbs (sweet potato or quinoa) to push caloric intake.'
-          : 'Keep your portions balanced and consistent at this level.',
-      aiConsultation: generatedAiConsultation.trim(),
-    };
+    // Non-2xx: log the raw backend message (often a long provider/quota dump)
+    // but surface a short, clean message to the user.
+    const errData = await res.json().catch(() => ({}));
+    console.error('Analysis backend error:', errData.message || res.status);
+    throw new Error("We couldn't analyze this meal right now — the AI service is temporarily unavailable. Please try again in a little while.");
   };
 
   // Orchestrates a scan: lives at the provider level (not in MealScanner) so
@@ -449,7 +260,9 @@ To elevate this meal, pick up some:
       return data;
     } catch (err) {
       console.error('Meal analysis error:', err);
-      setScanState({ isLoading: false, result: null, error: err.message || 'Analysis failed' });
+      const msg = err.message || 'Analysis failed. Please try again.';
+      setScanState({ isLoading: false, result: null, error: msg });
+      showToast(msg, 'error');
     }
   };
 

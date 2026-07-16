@@ -10,6 +10,7 @@ import {
   Compass,
   UtensilsCrossed,
   Salad,
+  AlertTriangle,
 } from 'lucide-react';
 import { useNutrition } from '../context/NutritionContext';
 
@@ -30,7 +31,7 @@ const VERDICT_STYLE = {
 
 const MealScanner = () => {
   const { scanState, runMealAnalysis, addLog, profile } = useNutrition();
-  const { isLoading, result } = scanState;
+  const { isLoading, result, error } = scanState;
   const [inputMode, setInputMode] = useState('upload'); // 'upload' or 'text'
   const [mealText, setMealText] = useState('');
   const [dragActive, setDragActive] = useState(false);
@@ -607,6 +608,31 @@ const MealScanner = () => {
                   </div>
                 )}
               </div>
+            </motion.div>
+          ) : error ? (
+            /* Error state — honest failure message instead of fabricated data */
+            <motion.div
+              key="analysis-error"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/30 rounded-3xl p-8 text-center flex flex-col items-center justify-center min-h-[500px] shadow-sm space-y-4"
+            >
+              <div className="p-4 bg-rose-50 dark:bg-rose-950/20 text-rose-500 rounded-2xl">
+                <AlertTriangle className="w-12 h-12" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-bold text-slate-850 dark:text-white text-base">Analysis Unavailable</h4>
+                <p className="text-slate-500 dark:text-slate-400 text-sm max-w-sm mx-auto">{error}</p>
+              </div>
+              <button
+                onClick={handleAnalyze}
+                disabled={(inputMode === 'upload' && !selectedFile) || (inputMode === 'text' && !mealText.trim())}
+                className="mt-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-semibold shadow-lg shadow-emerald-600/10 transition-colors"
+                id="retry-analysis-btn"
+              >
+                Try Again
+              </button>
             </motion.div>
           ) : (
             /* Initial blank state panel */
