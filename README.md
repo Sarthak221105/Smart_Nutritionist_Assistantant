@@ -1,232 +1,179 @@
 # 🥗 Smart Nutritionist Assistant
 
-<div align="center">
-  
-**Your Personal AI-Powered Nutrition Expert** 🍎
+**AI-powered nutrition tracking** — analyze meals from a photo or text, get a real macro/micronutrient breakdown, track nutrient gaps over time, and receive goal-aligned suggestions and recipe ideas.
 
-Analyze food images instantly and receive detailed nutritional insights, calorie breakdowns, and personalized health recommendations powered by Google's Gemini Pro Vision AI.
-
-[Features](#-features) • [Demo](#-demo) • [Installation](#-installation) • [Usage](#-usage) • [Tech Stack](#-tech-stack)
-
-</div>
+> **Note:** This project began as a single-file Streamlit app but is now a three-service web application (React + Node/Express + Python/Flask). If you're looking for the old Streamlit version, see `app.py` (legacy, no longer the primary entrypoint).
 
 ---
 
 ## ✨ Features
 
-<table>
-<tr>
-<td width="50%">
-
-### 🖼️ **Image Analysis**
-Upload any food image and get instant recognition of all ingredients and dishes using advanced AI vision technology.
-
-### 📊 **Nutritional Breakdown**
-Receive comprehensive calorie counts and macronutrient information (proteins, carbs, fats) for each identified food item.
-
-</td>
-<td width="50%">
-
-### 🎯 **Smart Recommendations**
-Get personalized health tips and dietary suggestions based on your nutritional intake and health goals.
-
-### ⚡ **Lightning Fast**
-Powered by Google Gemini Pro Vision for rapid, accurate analysis in seconds.
-
-</td>
-</tr>
-</table>
+- **Meal analysis from image or text** — upload a food photo or type ingredients; the backend extracts the food items and computes nutrition.
+- **Real macro + micronutrient breakdown** — calories, protein, carbs, fat, plus fiber, iron, calcium, vitamin D, vitamin C, and potassium, sourced from the USDA FoodData Central database.
+- **Goal alignment** — each meal is scored (helping / neutral / hindering) against the user's goal (lose / maintain / gain) with a short, concrete suggestion.
+- **Nutrient Gap Tracker** — every logged meal is stored with a timestamp; the app computes rolling 7-day and 30-day averages and flags nutrients that stay below their recommended daily value.
+- **Nutrient Trends tab** — per-nutrient trend charts with deficiency flags and plain-language explanations.
+- **Dashboard deficiency alerts** — once you've logged 7+ days, the Dashboard surfaces currently-deficient nutrients with "Know more" food suggestions.
+- **AI recipe recommendations** — semantic search over an 80k-recipe corpus (MongoDB Atlas Vector Search) plus an LLM-written consultation.
+- **Personalization** — goal, diet style (veg/vegan/non-veg), allergies, dietary restrictions, cuisine preference, and meal type (breakfast/lunch/dinner/snack).
 
 ---
 
-## 🎬 Demo
+## 🏗️ Architecture
 
-### 📸 Screenshots
-
-<div align="center">
-
-| Home Screen | Upload Interface | Analysis Results |
-|-------------|------------------|------------------|
-| ![Home](demo/home.png) | ![Upload](demo/upload.png) | ![Results](demo/results.png) |
-
-</div>
->
-
-</div>
-
-### ⚡ How It Works
-
-1. **Upload** - Select or drag-and-drop your food image
-2. **Analyze** - Click the button to process with AI
-3. **Review** - Get detailed nutritional insights instantly
-4. **Suggest** - Get recepie's matching your food and personalized requirements 
+Three services:
 
 ```
-📸 Food Image → 🤖 AI Analysis → 📋 Nutrition Report → 💡 Recommendations
+  React frontend (Vite)          Node / Express API            Python / Flask service
+  frotend/  :5173         ──▶     js_backend/  :5000     ──▶    api_server.py  :5001
+  - Firebase Auth (client)        - Firebase Admin (verify)     - Food extraction (vision/text)
+  - Dashboard, Scanner,           - Diet logs, profile,         - USDA nutrition lookup
+    Nutrient Trends, History        recommendations             - Diet analysis + recipe RAG
+  - Tailwind, framer-motion,      - Nutrient trends aggregation
+    recharts                      - Proxies /analyze ──────────▶ (Python service)
+                                  - MongoDB Atlas (Mongoose)
 ```
 
----
+**External services:** MongoDB Atlas (users, diet logs, recommendations, `recipeEmbeddings`), Firebase Authentication, USDA FoodData Central API, Google Gemini API, NVIDIA-hosted vision models.
 
-## 🚀 Installation
+### Vision provider
+Food extraction from images uses **NVIDIA Llama-3.2-90B-Vision** as the primary provider (chosen after benchmarking: accurate, no hallucinations, and not subject to Gemini's free-tier daily quota). It **falls back to Google Gemini** automatically on any technical failure (missing key, timeout, non-200).
 
-### Prerequisites
-
-- Python 3.8 or higher
-- Google API Key for Gemini Pro Vision
-- pip package manager
-
-### Quick Start
-
-**1. Clone the repository**
-```bash
-git clone https://github.com/Sarthak221105/Smart_Nutritionist_Assistantant.git
-cd Smart_Nutritionist_Assistantant
-```
-
-**2. Create a virtual environment** (recommended)
-```bash
-# Windows
-python -m venv venv
-venv\Scripts\activate
-
-# macOS/Linux
-python3 -m venv venv
-source venv/bin/activate
-```
-
-**3. Install dependencies**
-```bash
-pip install -r requirements.txt
-```
-
-**4. Set up environment variables**
-
-Create a `.env` file in the root directory:
-```env
-GOOGLE_API_KEY=your_google_api_key_here
-```
-
-To get your Google API key:
-- Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
-- Create a new API key
-- Copy and paste it into your `.env` file
-
----
-
-## 💻 Usage
-
-**Start the application:**
-```bash
-streamlit run app.py
-```
-
-The app will open automatically in your default browser at `http://localhost:8501`
-
-**Using the Assistant:**
-
-1. Upload a food image using the file uploader (JPG, JPEG, or PNG)
-2. Enter any specific dietary concerns.
-3. Click "Get Nutrition Info" to analyze
-4. View your comprehensive nutritional report
-5. Get suggested recepies according to your preferences
+### Recipe RAG
+Recipes were embedded with `sentence-transformers/all-MiniLM-L6-v2` (384-dim) and migrated into a MongoDB Atlas collection queried via `$vectorSearch`. See [Deployment notes](#-deployment-notes) for an important memory caveat.
 
 ---
 
 ## 🛠️ Tech Stack
 
-| Technology | Purpose |
-|------------|---------|
-| **Python** | Core programming language |
-| **Streamlit** | Interactive web application framework |
-| **Google Gemini Pro Vision** | AI-powered image analysis and nutrition recognition |
-| **Pillow (PIL)** | Image processing and manipulation |
-| **python-dotenv** | Environment variable management |
+| Layer | Technologies |
+|-------|-------------|
+| **Frontend** | React 19, Vite, Tailwind CSS, framer-motion, Recharts, Firebase Auth |
+| **API / auth layer** | Node.js, Express, Mongoose, Firebase Admin, Multer, MongoDB Atlas |
+| **AI / analysis service** | Python, Flask, NVIDIA Llama-3.2-90B-Vision, Google Gemini, USDA FoodData Central, ChromaDB / sentence-transformers (migration), MongoDB Atlas Vector Search |
 
 ---
 
 ## 📁 Project Structure
 
 ```
-Smart_Nutritionist_Assistant/
+Ai_Nutritionist/
+├── api_server.py            # Flask AI service (/analyze, /health)
+├── text_extraction.py       # Image/text food extraction (NVIDIA primary, Gemini fallback)
+├── nutrition_info.py        # USDA lookup + macro/micronutrient totals
+├── diet_analyzer.py         # Structured goal-alignment assessment (Gemini)
+├── llm_model.py             # AI consultation + recipe recommendations
+├── recipe_query.py          # Recipe vector search (Atlas $vectorSearch)
+├── requirements.txt         # Python dependencies
+├── migration/               # One-off ChromaDB -> Atlas recipe migration scripts
 │
-├── app.py                 # Main Streamlit application
-├── requirements.txt       # Python dependencies
-├── .env                   # Environment variables (create this)
-├── .gitignore            # Git ignore rules
-├── README.md             # Project documentation
-└── demo/                 # Demo screenshots and media
-    ├── home.png
-    ├── upload.png
-    ├── results.png
-    └── demo.gif
+├── js_backend/              # Node/Express API
+│   ├── server.js
+│   ├── controllers/         # auth, diet, recommendations, nutrients
+│   ├── models/              # User, DietLog, Recommendation, RecipeEmbedding
+│   ├── routes/              # auth, diet, recommendation, nutrition, nutrient
+│   ├── config/              # nutrientTargets.js (RDA + deficiency thresholds)
+│   └── utils/               # nutrientAnalysis.js (rolling stats + deficiency detection)
+│
+└── frotend/                 # React app
+    └── src/
+        ├── components/      # Dashboard, MealScanner, NutrientTrends, History,
+        │                    #   Settings, DeficiencyAlerts, Auth
+        ├── context/         # AuthContext, NutritionContext
+        └── data/            # nutrientFoodSuggestions.js
 ```
 
 ---
 
-## 🔧 Configuration
+## 🚀 Setup
 
-### Environment Variables
+### Prerequisites
+- Python 3.10+, Node.js 18+
+- Accounts/keys: MongoDB Atlas, Firebase project, Google Gemini API key, USDA API key, NVIDIA API key
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `GOOGLE_API_KEY` | Your Google Gemini API key | ✅ Yes |
+### 1. Python AI service
+```bash
+pip install -r requirements.txt
+python api_server.py        # serves on :5001
+```
+Root `.env`:
+```env
+MONGO_URI=<your Atlas connection string>   # used by recipe vector search
+GEMINI_API_KEY=<google gemini key>         # (GOOGLE_API_KEY also accepted)
+USDA_API_KEY=<usda fooddata central key>
+NVIDIA_API_KEY=<nvidia api key>            # primary vision provider
+PORT=5001
+```
 
-### Supported Image Formats
+### 2. Node / Express API
+```bash
+cd js_backend
+npm install
+npm start                   # serves on :5000
+```
+`js_backend/.env`:
+```env
+MONGO_URI=<your Atlas connection string>
+JWT_SECRET=<any secret>
+PORT=5000
+# Firebase Admin: either FIREBASE_SERVICE_ACCOUNT (JSON string) in env,
+# or a local js_backend/firebase-key.json (gitignored)
+```
 
-- JPG / JPEG
-- PNG
+### 3. React frontend
+```bash
+cd frotend
+npm install
+npm run dev                 # serves on :5173
+```
+`frotend/.env`:
+```env
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=...
+VITE_FIREBASE_PROJECT_ID=...
+VITE_FIREBASE_STORAGE_BUCKET=...
+VITE_FIREBASE_MESSAGING_SENDER_ID=...
+VITE_FIREBASE_APP_ID=...
+VITE_NODE_BACKEND_URL=http://localhost:5000     # deployed URL in prod
+VITE_PYTHON_BACKEND_URL=http://localhost:5001   # deployed URL in prod
+```
+For local development, put the localhost URLs in `frotend/.env.local` (gitignored) so they override any deployed URLs committed in `.env`.
 
 ---
 
-## 🤝 Contributing
+## 🔧 Configuration reference
 
-Contributions are welcome! Here's how you can help:
+| Variable | Service | Purpose |
+|----------|---------|---------|
+| `NVIDIA_API_KEY` | Python | Primary vision model for food extraction |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Python | Fallback vision + diet analysis + recipe consultation |
+| `USDA_API_KEY` | Python | Macro/micronutrient lookup |
+| `MONGO_URI` | Python + Node | MongoDB Atlas (recipe search + app data) |
+| `JWT_SECRET` | Node | Token signing |
+| Firebase service account | Node | Verifies frontend Firebase ID tokens |
+| `VITE_*` | Frontend | Firebase client config + backend URLs |
 
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/AmazingFeature`)
-3. **Commit** your changes (`git commit -m 'Add some AmazingFeature'`)
-4. **Push** to the branch (`git push origin feature/AmazingFeature`)
-5. **Open** a Pull Request
+Nutrient RDA targets and deficiency-detection thresholds live in
+`js_backend/config/nutrientTargets.js` (not hardcoded in logic).
+
+---
+
+## 📦 Deployment notes
+
+- The frontend deploys to Vercel; the two backends deploy to Render.
+- **Memory caveat (recipe search):** `recipe_query.py` loads a
+  sentence-transformers model (~400 MB with its dependencies) in-process to
+  embed the search query. This does **not** fit in Render's 512 MB free tier
+  and will OOM / time out the `/analyze` request when recipe search runs. On
+  the free tier, either disable recipe vector search (revert `search_recipe`
+  to a no-op), compute the query embedding via a hosted embedding API, or use
+  a larger instance.
+- **Gemini free-tier quota** is 20 requests/day per project per model.
+  Regenerating the API key does **not** reset it (it's per-project, resets
+  daily). This is why NVIDIA is the primary vision provider.
 
 ---
 
 ## 📝 License
 
-This project is open source and available under the [MIT License](LICENSE).
-
----
-
-## 👨‍💻 Author
-
-**Sarthak**
-
-- GitHub: [@Sarthak221105](https://github.com/Sarthak221105)
-- Project Link: [Smart Nutritionist Assistant](https://github.com/Sarthak221105/Smart_Nutritionist_Assistantant)
-
----
-
-## 🙏 Acknowledgments
-
-- Google Gemini AI for providing powerful vision capabilities
-- Streamlit for the amazing framework
-- The open-source community for continuous inspiration
-
----
-
-## 📞 Support
-
-Having issues? Here's how to get help:
-
-- 🐛 **Bug Reports**: [Open an issue](https://github.com/Sarthak221105/Smart_Nutritionist_Assistantant/issues)
-- 💡 **Feature Requests**: [Start a discussion](https://github.com/Sarthak221105/Smart_Nutritionist_Assistantant/discussions)
-- 📧 **Contact**: Reach out through GitHub
-
----
-
-<div align="center">
-
-**Made with ❤️ and AI**
-
-⭐ Star this repo if you find it helpful!
-
-</div>
+Open source under the [MIT License](LICENSE).
