@@ -2,6 +2,8 @@
 
 **AI-powered nutrition tracking** — analyze meals from a photo or text, get a real macro/micronutrient breakdown, track nutrient gaps over time, and receive goal-aligned suggestions and recipe ideas.
 
+![Smart Nutritionist Assistant — Dashboard](demo/dashboard.png)
+
 > **Note:** This project began as a single-file Streamlit app but is now a three-service web application (React + Node/Express + Python/Flask). If you're looking for the old Streamlit version, see `app.py` (legacy, no longer the primary entrypoint).
 
 ---
@@ -16,6 +18,46 @@
 - **Dashboard deficiency alerts** — once you've logged 7+ days, the Dashboard surfaces currently-deficient nutrients with "Know more" food suggestions.
 - **AI recipe recommendations** — semantic search over an 80k-recipe corpus (MongoDB Atlas Vector Search) plus an LLM-written consultation.
 - **Personalization** — goal, diet style (veg/vegan/non-veg), allergies, dietary restrictions, cuisine preference, and meal type (breakfast/lunch/dinner/snack).
+
+---
+
+## 📸 Screenshots
+
+> The screens below are captured from the current React app with sample data.
+
+### Dashboard
+
+Daily calorie ring, macronutrient balance, nutrient-deficiency alerts, and today's meal log — in light and dark themes.
+
+| Light | Dark |
+|-------|------|
+| ![Dashboard — light theme](demo/dashboard.png) | ![Dashboard — dark theme](demo/dashboard-dark.png) |
+
+### AI Meal Scanner
+
+Upload a meal photo or type ingredients, then get a macro + micronutrient breakdown, a goal-alignment score, a concrete suggestion, and AI recipe recommendations.
+
+![AI Meal Scanner](demo/scanner.png)
+
+### Nutrient Trends
+
+Per-nutrient 30-day charts with RDA reference lines, rolling 7-day / 30-day averages, and deficiency-pattern flags (persistent shortfall, declining trend).
+
+![Nutrient Trends](demo/trends.png)
+
+### Log History
+
+A searchable, meal-type-filterable history of every logged meal, with rolling averages up top.
+
+![Log History](demo/history.png)
+
+### Profile Metrics & Sign In
+
+Profile drives the Mifflin–St Jeor target calculations. Access is gated by Firebase Authentication.
+
+| Profile Metrics | Sign In |
+|-----------------|---------|
+| ![Profile Metrics](demo/settings.png) | ![Sign In](demo/login.png) |
 
 ---
 
